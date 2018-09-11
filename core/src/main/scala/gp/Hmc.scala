@@ -13,17 +13,17 @@ case class DiscreteUniform(min: Int, max: Int) extends Rand[Int] {
     min + scala.util.Random.nextInt(max - min + 1)
 }
 
-/**
-  * TODO: Change leapfrog steps to handle constraints using section 5.1 of 
-  * handbook of MCMC
-  */
 case class HmcState(
   theta:    DenseVector[Double],
   accepted: Int)
 
 /**
-  * Hamiltonian Monte Carlo 
-  * prior distribution for the momentum parameters
+  * Hamiltonian Monte Carlo on unconstrained parameter spaces
+  * @param m the dimension of the parameters
+  * @param l the number of leapgfrog steps
+  * @param eps the step size
+  * @param gradient
+  * @param ll 
   */
 case class Hmc(
   m: Int,
@@ -60,7 +60,6 @@ case class Hmc(
     val p1 = leapfrogHalfStep(theta, phi, eps)
     val t1 = theta + eps * p1
     val p2 = leapfrogHalfStep(t1, p1, eps)
-
     (t1, p2)
   }
 
@@ -71,7 +70,7 @@ case class Hmc(
 
     Stream
       .iterate((theta, phi)) {
-        case (p, t) =>
+        case (t, p) =>
           leapfrog(t, p, eps)
       }
   }
@@ -82,12 +81,19 @@ case class Hmc(
     theta: DenseVector[Double],
     phi: DenseVector[Double]) = {
 
-    val ap = ll(propTheta) + propPhi.t * propPhi * 0.5 -
-      ll(theta) - phi.t * phi * 0.5
+    val ap = ll(propTheta) - propPhi.t * propPhi * 0.5 -
+      ll(theta) + phi.t * phi * 0.5
+
+    println(s"new ll ${ll(propTheta)}")
+    println(s"old ll ${ll(theta)}")
+    println(s"old kinetic ${phi.t * phi * 0.5}")
+    println(s"new kinetic ${propPhi.t * propPhi * 0.5}")
+    println(s"gradient $propPhi")
+    println(s"acceptance probability is ${exp(ap)}")
     if (ap.isNaN) {
       -1e99
     } else {
-      min(-ap, 0.0)
+      ap
     }
   }
 
@@ -99,11 +105,11 @@ case class Hmc(
   def step(s: HmcState): Rand[HmcState] = {
     for {
       phi <- priorPhi
-      (propPhi, propTheta) = leapfrogs(s.theta, phi, eps).
+      (propTheta, propPhi) = leapfrogs(s.theta, phi, eps).
         take(l).last
       a = logAcceptance(propTheta, propPhi, s.theta, phi)
       u <- Uniform(0, 1)
-      next = if (log(u) < -a) {
+      next = if (log(u) < a) {
         HmcState(propTheta, s.accepted + 1)
       } else {
         s
@@ -162,4 +168,40 @@ object Hmc {
     val initState = HmcState(theta, 0)
     MarkovChain(initState)(hmc.step)
   }
+
+  /**
+    * Perform a logistic transformation 
+    */
+  def logistic(x: Double): Double =
+    1.0 / (1.0 + exp(-x))
+
+  /**
+    * Parameter in an HMC algorithm
+    */
+  case class Parameter(
+    unconstrained: Double,
+    constrained: Double,
+    logJacobian: Double,
+    derivative: Double
+  )
+
+  def unbounded(x: Double) =
+    Parameter(x, x, 0, 0)
+
+  /**
+    * Transform an unconstrained parameter given constraints
+    * @param min
+    * @param max
+    * @param x
+    * @return The transformed parameter and the log-jacobian
+    */
+  def bounded(min: Double, max: Double)(x: Double) = Parameter(
+    x,
+    logistic(x) * (max - min) + min,
+    log(logistic(x)) + log(1 - logistic(x)) + log(max - min),
+    -exp(-2*x) / pow(1 + exp(-x), 2)
+  )
+
+  def boundedBelow(min: Double)(x: Double) =
+    Parameter(x, exp(x) + min, x, 1)
 }

@@ -1,7 +1,7 @@
 package gp.core
 
 import breeze.stats.distributions._
-import breeze.linalg.{DenseVector, diag}
+import breeze.linalg.{DenseVector, DenseMatrix}
 import math._
 
 /**
@@ -12,16 +12,14 @@ import math._
   * TODO: What is deltamax!?
   */
 case class Nuts(
+  m: Int,
   delta: Double,
-  m: DenseVector[Double],
   mAdapt: Int,
   gradient: DenseVector[Double] => DenseVector[Double],
   ll: DenseVector[Double] => Double,
 deltamax: Double) {
 
   def findReasonableEpsilon(theta: DenseVector[Double]): Double = {
-    println("finding reasonable epsilon")
-
     val eps = 1.0
     val phi = priorPhi.draw
     val (initTheta, initPhi) = leapfrog(theta, phi, eps)
@@ -50,12 +48,9 @@ deltamax: Double) {
     eps: Double) = 
       phi + eps * 0.5 * gradient(theta)
 
-  /**
-    * Prior distribution for the momentum variables
-    */
   def priorPhi = {
-    val zero = DenseVector.zeros[Double](m.size)
-    MultivariateGaussian(zero, diag(m))
+    val zero = DenseVector.zeros[Double](m)
+    MultivariateGaussian(zero, DenseMatrix.eye[Double](m))
   }
 
   private def logAcceptance(
@@ -64,8 +59,8 @@ deltamax: Double) {
     theta: DenseVector[Double],
     phi: DenseVector[Double]) = {
 
-    val ap = ll(propTheta) + propPhi.t * propPhi * 0.5 -
-      ll(theta) - phi.t * phi * 0.5
+    val ap = ll(propTheta) - propPhi.t * propPhi * 0.5 -
+      ll(theta) + phi.t * phi * 0.5
     if (ap.isNaN) {
       -1e99
     } else {
@@ -82,7 +77,7 @@ deltamax: Double) {
     eps: Double) = {
 
     val p1 = leapfrogHalfStep(theta, phi, eps)
-    val t1 = theta + eps * diag(m.map(1.0 / _)) * p1
+    val t1 = theta + eps * p1
     val p2 = leapfrogHalfStep(t1, p1, eps)
 
     (p2, t1)
@@ -118,8 +113,8 @@ deltamax: Double) {
     thetaM: DenseVector[Double],
     phiM: DenseVector[Double],
     theta1: DenseVector[Double],
-    n: Int,
-    s: Int,
+    n:      Int,
+    s:      Int,
     acceptProb: Double,
     nAccept: Int)
     

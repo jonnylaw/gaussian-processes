@@ -10,6 +10,8 @@ import akka.stream._
 import scaladsl._
 import math._
 
+// TODO: Consider sampling on the unbounded space more carefully
+// transformations
 trait Ar1Model {
   def arStep(p: DenseVector[Double])(a0: Double) = {
     val phi = p(0)
@@ -31,34 +33,37 @@ trait Ar1Model {
 
   val params = DenseVector(0.8, 1.0, 0.3)
   val sims = arSims(params).steps.take(500).toVector
-}
 
-object ArHmc extends App with Ar1Model {
-  implicit val system = ActorSystem("fit_simulated_gp")
-  implicit val materializer = ActorMaterializer()
+  /**
+    * Transform the parameters to be constrained 
+    */
+  def constrain(p: DenseVector[Double]): Vector[Hmc.Parameter] = {
+    val phi = Hmc.bounded(0, 1)(p(0))
+    val mu = Hmc.unbounded(p(1))
+    val sigma = Hmc.boundedBelow(0)(p(2))
 
+    Vector(phi, mu, sigma)
+  }
+
+  /**
+    * Calculate the log-prior in the transformed parameter space
+    */
   def logPrior(p: DenseVector[Double]): Double = {
-    val phi = p(0)
-    val mu = p(1)
-    val sigma = p(2)
+    val ps = constrain(p)
+    println(s"Evaluting the prior with these parameters ${ps.map(_.constrained)}")
 
-    val priorSigma =
-      if (sigma < 0) -1e99
-      else new CauchyDistribution(1.0, 1.0).logPdf(sigma)
+    val priorPhi = new Beta(3, 4).logPdf(ps(0).constrained) + ps(0).logJacobian
+    val priorMu = Gaussian(0, 1).logPdf(ps(1).constrained) + ps(1).logJacobian
+    val priorSigma = new CauchyDistribution(1.0, 1.0).logPdf(ps(2).constrained) + ps(2).logJacobian 
 
-    val priorPhi =
-      if (phi > 1 || phi < 0) -1e99
-      else new Beta(3, 4).logPdf(phi)
-
-    priorPhi +
-      Gaussian(0, 1).logPdf(mu) +
-      priorSigma
+    priorPhi + priorMu + priorSigma
   }
 
   def ll(alphas: Vector[Double])(p: DenseVector[Double]) = {
-    val phi = p(0)
-    val mu = p(1)
-    val sigma = p(2)
+    val ps = constrain(p)
+    val phi = ps(0).constrained
+    val mu = ps(1).constrained
+    val sigma = ps(2).constrained
 
     val initsd = math.sqrt(math.pow(sigma, 2) / (1 - math.pow(phi, 2)))
     Gaussian(mu, initsd).logPdf(alphas.head) +
@@ -68,12 +73,17 @@ object ArHmc extends App with Ar1Model {
       }.sum
   }
 
-  // gradient of the log-posterior with respect to the parameters
+  /**
+    * Gradient of the un-normalised log-posterior with
+    * respect to the parameters, need to consider the derivative of the 
+    * log-Jacobian 
+    */
   def grad(alphas: Vector[Double])(
-      p: DenseVector[Double]): DenseVector[Double] = {
-    val phi = p(0)
-    val mu = p(1)
-    val sigma = p(2)
+    p: DenseVector[Double]): DenseVector[Double] = {
+    val ps = constrain(p)
+    val phi = ps(0).constrained
+    val mu = ps(1).constrained
+    val sigma = ps(2).constrained
 
     val n = alphas.size
 
@@ -85,45 +95,76 @@ object ArHmc extends App with Ar1Model {
       case (a0, a1) => (a0 - mu) * (a1 - (mu + phi * (a0 - mu)))
     }.sum
 
-    // initial observation phi
-    val initPhi = - (alphas.head - mu) * (alphas.head - mu) / (2 * sigma * sigma) * (phi + log(2 * Pi * (1 - phi * phi) / (sigma * sigma)))
-
-    val dphi = (alphaPhi - 1) * (betaPhi - 1) * (1 - 2 * phi) / (phi * (1 - phi) * lbeta(alphaPhi, betaPhi)) + (1 / (sigma * sigma) * ssa)
+    val dphi = (alphaPhi - 1) * (betaPhi - 1) * (1 - 2 * phi) / (phi * (1 - phi) * lbeta(alphaPhi, betaPhi)) + (1 / (sigma * sigma) * ssa) + ps(0).derivative
 
     val ssb = (alphas.init, alphas.tail).zipped.map {
       case (a0, a1) => a1 - (mu + phi * (a0 - mu))
     }.sum
 
-    // initial observation mu
-    val initMu = -log(2 * Pi * (1 - phi * phi) / (sigma * sigma)) * (alphas.head - mu) * (1 - phi * phi) / (2 * sigma * sigma)
-
-    val dmu = -mu + ((1 - phi) / math.pow(sigma, 2)) * ssb
+    val dmu = -mu + ((1 - phi) / math.pow(sigma, 2)) * ssb + ps(1).derivative
 
     val ssc = (alphas.init, alphas.tail).zipped.map {
       case (a0, a1) => math.pow(a1 - (mu + phi * (a0 - mu)), 2)
     }.sum
 
     // Cauchy Prior derivative
-    // initial observation sigma
-    val initSigma = - (alphas.head - mu) * (alphas.head - mu) * (1 - phi * phi) / pow(sigma, 3) * (0.5 - log(2 * Pi * (1 - phi * phi)/ (sigma * sigma)))
-    val dsigma = 2*sigma/(sigma-lSigma) -n / sigma + (1 / pow(sigma, 3)) * ssc
+    val dsigma = 2*sigma/(sigma-lSigma) -n / sigma + (1 / pow(sigma, 3)) * ssc + ps(2).derivative
 
     DenseVector(dphi, dmu, dsigma)
   }
+}
+
+object ArHmc extends App with Ar1Model {
+  // implicit val system = ActorSystem("fit_simulated_gp")
+  // implicit val materializer = ActorMaterializer()
 
   implicit val basis = RandBasis.withSeed(2)
 
-  val m = DenseVector.ones[Double](3)
   val pos = (p: DenseVector[Double]) => logPrior(p) + ll(sims)(p)
-  val iters = Hmc(3, 5, 0.0075, grad(sims), pos).sample(params)
+
+  val unconstrained =
+    DenseVector(Dglm.logit(params(0)), params(1), log(params(2)))
+
+  println(s"initial parameters $unconstrained")
+  println(s"constrained parameters: ${constrain(unconstrained)}")
+
+  val iters = Hmc(3, 5, 0.05, grad(sims), pos).
+    sample(unconstrained)
+
+  def format(s: HmcState): List[Double] = {
+    constrain(s.theta).map(_.constrained).toList ++ List(s.accepted.toDouble)
+  }
+
+  iters.
+    steps.
+    take(100).
+    map(s => constrain(s.theta).map(_.constrained)).
+    foreach(println)
+
+  // Streaming
+  //   .writeParallelChain(iters, 2, 1000, "examples/data/ar1_hmc", format)
+  //   .runWith(Sink.onComplete(_ => system.terminate()))
+}
+
+object Ar1Nuts extends App with Ar1Model {
+  implicit val basis = RandBasis.withSeed(4)
+
+  val pos = (p: DenseVector[Double]) => logPrior(p) + ll(sims)(p)
+
+  val unconstrained =
+    DenseVector(Dglm.logit(params(0)), params(1), log(params(2)))
+
+  val iters = Nuts(3, 0.05, 1000, grad(sims), pos, 0.5).
+    sample(unconstrained)
 
   def format(s: HmcState): List[Double] = {
     s.theta.data.toList ++ List(s.accepted.toDouble)
   }
 
-  Streaming
-    .writeParallelChain(iters, 2, 1000, "examples/data/ar1_hmc", format)
-    .runWith(Sink.onComplete(_ => system.terminate()))
+  iters.
+    steps.
+    take(100).
+    map(s => constrain(s.theta).map(_.constrained)).
+    foreach(println)
 }
 
-object Ar1Nuts extends App {}

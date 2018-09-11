@@ -38,14 +38,14 @@ case class Hmc(lambda: Double, delta: Double, m: DenseVector[Double], mAdapt: In
   ll: DenseVector[Double] => Double) {
 
   private def leapfrogStep(
-    phi: DenseVector[Double],
     theta: DenseVector[Double],
+    phi: DenseVector[Double],
     eps: Double) = {
 
     val newTheta = theta + eps * diag(m.map(1.0 / _)) * phi
     val newPhi = phi + eps * gradient(newTheta)
 
-    (newPhi, newTheta)
+    (newTheta, newPhi)
   }
 
   private def leapfrogHalfStep(
@@ -74,26 +74,26 @@ case class Hmc(lambda: Double, delta: Double, m: DenseVector[Double], mAdapt: In
     val (t1, p2) = leapfrogStep(theta, p1, eps)
     val p3 = leapfrogHalfStep(t1, p2, eps)
 
-    (p3, t1)
+    (t1, p3)
   }
 
   private def leapfrogs(
-    phi: DenseVector[Double],
     theta: DenseVector[Double],
+    phi: DenseVector[Double],
     eps: Double): Stream[(DenseVector[Double], DenseVector[Double])] = {
 
     Stream
-      .iterate((phi, theta)) {
+      .iterate((theta, phi)) {
         case (p, t) =>
-          leapfrog(p, t, eps)
+          leapfrog(t, p, eps)
       }
   }
 
   private def logAcceptance(
     propTheta: DenseVector[Double],
     propPhi: DenseVector[Double],
-    phi: DenseVector[Double],
-    theta: DenseVector[Double]) = {
+    theta: DenseVector[Double],
+    phi: DenseVector[Double]) = {
 
     val ap = ll(propTheta) + priorPhi.logPdf(propPhi) -
       ll(theta) - priorPhi.logPdf(phi)
@@ -105,11 +105,13 @@ case class Hmc(lambda: Double, delta: Double, m: DenseVector[Double], mAdapt: In
   }
 
   def findReasonableEpsilon(theta: DenseVector[Double]): Double = {
+    println("finding reasonable epsilon")
+
     val eps = 1.0
     val phi = priorPhi.draw
-    val (initTheta, initPhi) = leapfrog(phi, theta, eps)
-    val prop = (propTheta: DenseVector[Double], propPhi: DenseVector[Double]) =>
-      logAcceptance(propTheta, propPhi, phi, theta)
+    val (initTheta, initPhi) = leapfrog(theta, phi, eps)
+    def prop(propTheta: DenseVector[Double], propPhi: DenseVector[Double]) =
+      logAcceptance(propTheta, propPhi, theta, phi)
     val i = prop(initTheta, initPhi) > log(0.5)
     val a = if (i) 1.0 else -1.0
 
@@ -117,7 +119,7 @@ case class Hmc(lambda: Double, delta: Double, m: DenseVector[Double], mAdapt: In
       phiP: DenseVector[Double], curEps: Double): Double = {
 
       if (a * prop(thetaP, phiP) > -a * log(2)) {
-        val (propTheta, propPhi) = leapfrog(phiP, thetaP, eps)
+        val (propTheta, propPhi) = leapfrog(theta, phi, curEps)
         loop(propTheta, propPhi, pow(2, a) * curEps)
       } else {
         curEps
@@ -160,9 +162,9 @@ case class Hmc(lambda: Double, delta: Double, m: DenseVector[Double], mAdapt: In
       phi <- priorPhi
       eps = exp(s.logeps) // use current value of step size
       lm = max(1, round(lambda / eps).toInt)
-      (propPhi, propTheta) = leapfrogs(phi, s.theta, eps).
+      (propPhi, propTheta) = leapfrogs(s.theta, phi, eps).
         take(lm).last
-      a = logAcceptance(propTheta, propPhi, phi, s.theta)
+      a = logAcceptance(propTheta, propPhi, s.theta, phi)
       (hm1, logeps1) = if (s.iter < mAdapt) {
         updateEps(s.iter, log(10) + s.logeps,
           min(1.0, exp(a)))(s.hm, s.logeps)

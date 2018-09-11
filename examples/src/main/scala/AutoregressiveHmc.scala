@@ -33,8 +33,8 @@ trait Ar1Model {
 }
 
 object ArHmc extends App with Ar1Model {
-  implicit val system = ActorSystem("fit_simulated_gp")
-  implicit val materializer = ActorMaterializer()
+  // implicit val system = ActorSystem("fit_simulated_gp")
+  // implicit val materializer = ActorMaterializer()
 
   def logPrior(p: DenseVector[Double]): Double = {
     val phi = p(0)
@@ -111,15 +111,17 @@ object ArHmc extends App with Ar1Model {
 
   val m = DenseVector.ones[Double](3)
   val pos = (p: DenseVector[Double]) => logPrior(p) + ll(sims)(p)
-  val iters = Hmc(0.01, 0.65, m, 1000, grad(sims), pos).sample(params)
+  val iters = Hmc(0.5, 0.65, m, 1000, grad(sims), ll(sims)).sample(params)
 
   def format(s: HmcState): List[Double] = {
     s.theta.data.toList ++ List(s.accepted.toDouble)
   }
 
-  Streaming
-    .writeParallelChain(iters, 2, 10000, "examples/data/ar1_hmc", format)
-    .runWith(Sink.onComplete(_ => system.terminate()))
+  iters.steps.take(1000).foreach(println)
+
+  // Streaming
+  //   .writeParallelChain(iters, 2, 10000, "examples/data/ar1_hmc", format)
+  //   .runWith(Sink.onComplete(_ => system.terminate()))
 }
 
 object Ar1Nuts extends App {}

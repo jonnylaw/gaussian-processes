@@ -20,19 +20,21 @@ case class Nuts(
 deltamax: Double) {
 
   def findReasonableEpsilon(theta: DenseVector[Double]): Double = {
+    println("finding reasonable epsilon")
+
     val eps = 1.0
     val phi = priorPhi.draw
-    val (initTheta, initPhi) = leapfrog(phi, theta, eps)
-    val prop = (propTheta: DenseVector[Double], propPhi: DenseVector[Double]) =>
-      logAcceptance(propTheta, propPhi, phi, theta)
+    val (initTheta, initPhi) = leapfrog(theta, phi, eps)
+    def prop(propTheta: DenseVector[Double], propPhi: DenseVector[Double]) =
+      logAcceptance(propTheta, propPhi, theta, phi)
     val i = prop(initTheta, initPhi) > log(0.5)
-    val a = if (i) 1 else -1
+    val a = if (i) 1.0 else -1.0
 
     def loop(thetaP: DenseVector[Double],
       phiP: DenseVector[Double], curEps: Double): Double = {
 
       if (a * prop(thetaP, phiP) > -a * log(2)) {
-        val (propTheta, propPhi) = leapfrog(phiP, thetaP, eps)
+        val (propTheta, propPhi) = leapfrog(theta, phi, curEps)
         loop(propTheta, propPhi, pow(2, a) * curEps)
       } else {
         curEps

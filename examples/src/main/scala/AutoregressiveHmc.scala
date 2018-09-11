@@ -111,7 +111,7 @@ object ArHmc extends App with Ar1Model {
 
   val m = DenseVector.ones[Double](3)
   val pos = (p: DenseVector[Double]) => logPrior(p) + ll(sims)(p)
-  val iters = Hmc(0.5, 0.65, m, 1000, grad(sims), pos).sample(params)
+  val iters = Hmc(0.01, 0.65, m, 1000, grad(sims), pos).sample(params)
 
   def format(s: HmcState): List[Double] = {
     s.theta.data.toList ++ List(s.accepted.toDouble)

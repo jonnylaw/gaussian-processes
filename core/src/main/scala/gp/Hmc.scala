@@ -111,12 +111,12 @@ case class Hmc(lambda: Double, delta: Double, m: DenseVector[Double], mAdapt: In
     val prop = (propTheta: DenseVector[Double], propPhi: DenseVector[Double]) =>
       logAcceptance(propTheta, propPhi, phi, theta)
     val i = prop(initTheta, initPhi) > log(0.5)
-    val a = if (i) 2 else -1
+    val a = if (i) 1.0 else -1.0
 
     def loop(thetaP: DenseVector[Double],
       phiP: DenseVector[Double], curEps: Double): Double = {
 
-      if (pow(prop(thetaP, phiP), a) > pow(2, -a)) {
+      if (a * prop(thetaP, phiP) > -a * log(2)) {
         val (propTheta, propPhi) = leapfrog(phiP, thetaP, eps)
         loop(propTheta, propPhi, pow(2, a) * curEps)
       } else {
@@ -142,11 +142,12 @@ case class Hmc(lambda: Double, delta: Double, m: DenseVector[Double], mAdapt: In
     t0:    Double = 10
     )(hm0: Double, logeps0: Double): (Double, Double) = {
 
-    val hm = (1 - 1 / (m + t0)) * hm0 + 1 / (m + t0) * (delta - acceptProb)
+    val ra = 1 / (m + t0)
+    val hm = (1 - ra) * hm0 + ra * (delta - acceptProb)
     val logem = mu - (sqrt(m) / gamma) * hm
     val logem1 = pow(m, -k) * logem + (1 - pow(m, -k)) * logeps0
 
-    (hm0, logem1)
+    (hm, logem1)
   }
 
   /**
@@ -168,8 +169,10 @@ case class Hmc(lambda: Double, delta: Double, m: DenseVector[Double], mAdapt: In
       } else {
         (s.hm, s.logeps)
       }
-      _ = if (s.iter % 1000 == 0) {
+      _ = if (s.iter < 1000 && s.iter % 100 == 0) {
+        println(s"current iteration: ${s.iter}")
         println(s"current step size: ${exp(logeps1)}")
+        println(s"current hm: ${hm1}")
         println(s"current number of steps $lm")
       }
       u <- Uniform(0.0, 1.0)
@@ -186,7 +189,8 @@ case class Hmc(lambda: Double, delta: Double, m: DenseVector[Double], mAdapt: In
     */
   def sample(init: DenseVector[Double]): Process[HmcState] = {
     val eps0 = findReasonableEpsilon(init)
-    val initState = HmcState(0, init, 0, log(eps0), 0.0)
+    println(s"initial step size $eps0")
+    val initState = HmcState(1, init, 0, log(eps0), 0.0)
     MarkovChain(initState)(step)
   }
 }
@@ -232,7 +236,7 @@ object Hmc {
 
     val theta = paramsToDenseVector(init)
     val eps0 = hmc.findReasonableEpsilon(theta)
-    val initState = HmcState(0, theta, 0, log(eps0), 0.0)
+    val initState = HmcState(1, theta, 0, log(eps0), 0.0)
     MarkovChain(initState)(hmc.step)
   }
 }

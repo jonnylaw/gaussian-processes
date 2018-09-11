@@ -26,12 +26,12 @@ deltamax: Double) {
     val prop = (propTheta: DenseVector[Double], propPhi: DenseVector[Double]) =>
       logAcceptance(propTheta, propPhi, phi, theta)
     val i = prop(initTheta, initPhi) > log(0.5)
-    val a = if (i) 2 else -1
+    val a = if (i) 1 else -1
 
     def loop(thetaP: DenseVector[Double],
       phiP: DenseVector[Double], curEps: Double): Double = {
 
-      if (pow(prop(thetaP, phiP), a) > pow(2, -a)) {
+      if (a * prop(thetaP, phiP) > -a * log(2)) {
         val (propTheta, propPhi) = leapfrog(phiP, thetaP, eps)
         loop(propTheta, propPhi, pow(2, a) * curEps)
       } else {
@@ -107,12 +107,14 @@ deltamax: Double) {
     m:     Int,
     mu:    Double,
     acceptProb: Double,
+    nAccept: Int,
     k:     Double = 0.75,
     gamma: Double = 0.05,
     t0:    Double = 10
     )(hm0: Double, logeps0: Double): (Double, Double) = {
 
-    val hm = (1 - 1 / (m + t0)) * hm0 + 1 / (m + t0) * (delta - acceptProb)
+    val ra = 1 / (m + t0)
+    val hm = (1 - ra) * hm0 + ra * (delta - acceptProb / nAccept)
     val logem = mu - (sqrt(m) / gamma) * hm
     val logem1 = pow(m, -k) * logem + (1 - pow(m, -k)) * logeps0
 
@@ -246,12 +248,21 @@ deltamax: Double) {
       st = loopTrees(u, eps, 0, phi, s.theta)(initst)
       (hm1, logeps1) = if (s.iter < mAdapt) {
         updateEps(s.iter, log(10) + s.logeps,
-          min(1.0, exp(st.acceptProb)))(s.hm, s.logeps)
+          min(1.0, exp(st.acceptProb)), st.nAccept)(s.hm, s.logeps)
       } else {
         (s.hm, s.logeps)
       }
       next = HmcState(s.iter + 1, st.theta1,
         s.accepted + st.nAccept, logeps1, hm1)
     } yield next
+  }
+
+  /**
+    * Perform HMC for the Gaussian Process Hyper Parameters
+    */
+  def sample(init: DenseVector[Double]): Process[HmcState] = {
+    val eps0 = findReasonableEpsilon(init)
+    val initState = HmcState(1, init, 0, log(eps0), 0.0)
+    MarkovChain(initState)(step)
   }
 }

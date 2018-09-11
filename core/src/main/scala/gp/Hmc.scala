@@ -81,15 +81,9 @@ case class Hmc(
     theta: DenseVector[Double],
     phi: DenseVector[Double]) = {
 
-    val ap = ll(propTheta) - propPhi.t * propPhi * 0.5 -
-      ll(theta) + phi.t * phi * 0.5
+    val ap = ll(propTheta) + priorPhi.logPdf(propPhi) +
+      ll(theta) - priorPhi.logPdf(phi)
 
-    println(s"new ll ${ll(propTheta)}")
-    println(s"old ll ${ll(theta)}")
-    println(s"old kinetic ${phi.t * phi * 0.5}")
-    println(s"new kinetic ${propPhi.t * propPhi * 0.5}")
-    println(s"gradient $propPhi")
-    println(s"acceptance probability is ${exp(ap)}")
     if (ap.isNaN) {
       -1e99
     } else {

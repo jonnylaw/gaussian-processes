@@ -38,7 +38,7 @@ trait Ar1Model {
     * Transform the parameters to be constrained 
     */
   def constrain(p: DenseVector[Double]): Vector[Hmc.Parameter] = {
-    val phi = Hmc.bounded(0, 1)(p(0))
+    val phi = Hmc.bounded(0.01, 0.99)(p(0))
     val mu = Hmc.unbounded(p(1))
     val sigma = Hmc.boundedBelow(0)(p(2))
 
@@ -50,11 +50,11 @@ trait Ar1Model {
     */
   def logPrior(p: DenseVector[Double]): Double = {
     val ps = constrain(p)
-    println(s"Evaluting the prior with these parameters ${ps.map(_.constrained)}")
+    // println(s"Evaluting the prior with these parameters ${ps.map(_.constrained )}")
 
     val priorPhi = new Beta(3, 4).logPdf(ps(0).constrained) + ps(0).logJacobian
     val priorMu = Gaussian(0, 1).logPdf(ps(1).constrained) + ps(1).logJacobian
-    val priorSigma = new CauchyDistribution(1.0, 1.0).logPdf(ps(2).constrained) + ps(2).logJacobian 
+    val priorSigma = new CauchyDistribution(6.0, 6.0).logPdf(ps(2).constrained) + ps(2).logJacobian 
 
     priorPhi + priorMu + priorSigma
   }
@@ -89,7 +89,9 @@ trait Ar1Model {
 
     val alphaPhi = 3.0
     val betaPhi = 4.0
-    val lSigma = 1.0
+
+    val lSigma = 6.0
+    val gamma = 6.0
 
     val ssa = (alphas.init, alphas.tail).zipped.map {
       case (a0, a1) => (a0 - mu) * (a1 - (mu + phi * (a0 - mu)))
@@ -108,15 +110,15 @@ trait Ar1Model {
     }.sum
 
     // Cauchy Prior derivative
-    val dsigma = 2*sigma/(sigma-lSigma) -n / sigma + (1 / pow(sigma, 3)) * ssc + ps(2).derivative
+    val dsigma = 2/Pi*math.pow(gamma+sigma-lSigma, 2) -n / sigma + (1 / pow(sigma, 3)) * ssc + ps(2).derivative
 
     DenseVector(dphi, dmu, dsigma)
   }
 }
 
 object ArHmc extends App with Ar1Model {
-  // implicit val system = ActorSystem("fit_simulated_gp")
-  // implicit val materializer = ActorMaterializer()
+  implicit val system = ActorSystem("fit_simulated_gp")
+  implicit val materializer = ActorMaterializer()
 
   implicit val basis = RandBasis.withSeed(2)
 
@@ -125,28 +127,19 @@ object ArHmc extends App with Ar1Model {
   val unconstrained =
     DenseVector(Dglm.logit(params(0)), params(1), log(params(2)))
 
-  println(s"initial parameters $unconstrained")
-  println(s"constrained parameters: ${constrain(unconstrained)}")
-
-  val iters = Hmc(3, 5, 0.05, grad(sims), pos).
+  val iters = Hmc(3, 20, 0.0275, grad(sims), pos).
     sample(unconstrained)
 
   def format(s: HmcState): List[Double] = {
     constrain(s.theta).map(_.constrained).toList ++ List(s.accepted.toDouble)
   }
 
-  iters.
-    steps.
-    take(100).
-    map(s => constrain(s.theta).map(_.constrained)).
-    foreach(println)
-
-  // Streaming
-  //   .writeParallelChain(iters, 2, 1000, "examples/data/ar1_hmc", format)
-  //   .runWith(Sink.onComplete(_ => system.terminate()))
+  Streaming
+    .writeParallelChain(iters, 2, 10000, "examples/data/ar1_hmc", format)
+    .runWith(Sink.onComplete(_ => system.terminate()))
 }
 
-object Ar1Nuts extends App with Ar1Model {
+object Ar1Da extends App with Ar1Model {
   implicit val basis = RandBasis.withSeed(4)
 
   val pos = (p: DenseVector[Double]) => logPrior(p) + ll(sims)(p)
@@ -154,12 +147,12 @@ object Ar1Nuts extends App with Ar1Model {
   val unconstrained =
     DenseVector(Dglm.logit(params(0)), params(1), log(params(2)))
 
-  val iters = Nuts(3, 0.05, 1000, grad(sims), pos, 0.5).
+  val m = DenseVector.ones[Double](3)
+  val iters = HmcDa(0.5, 0.65, m, 1000, grad(sims), pos).
     sample(unconstrained)
 
-  def format(s: HmcState): List[Double] = {
+  def format(s: HmcState): List[Double] = 
     s.theta.data.toList ++ List(s.accepted.toDouble)
-  }
 
   iters.
     steps.

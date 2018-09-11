@@ -6,8 +6,7 @@ import GaussianProcess._
 import math._
 
 /**
-  * TODO: Change leapfrog steps to handle constraints using section 5.1 of 
-  * handbook of MCMC
+  * TODO: How to handle proposals of NaN
   */
 case class HmcDaState(
   iter:     Int,
@@ -25,7 +24,11 @@ case class HmcDaState(
   * prior distribution for the momentum parameters
   * @param mAdapt the number of adaptation iterations to run
   */
-case class HmcDa(lambda: Double, delta: Double, m: DenseVector[Double], mAdapt: Int,
+case class HmcDa(
+  lambda: Double,
+  delta: Double,
+  m: DenseVector[Double],
+  mAdapt: Int,
   gradient: DenseVector[Double] => DenseVector[Double],
   ll: DenseVector[Double] => Double) {
 
@@ -65,7 +68,7 @@ case class HmcDa(lambda: Double, delta: Double, m: DenseVector[Double], mAdapt: 
 
     Stream
       .iterate((theta, phi)) {
-        case (p, t) =>
+        case (t, p) =>
           leapfrog(t, p, eps)
       }
   }
@@ -76,12 +79,13 @@ case class HmcDa(lambda: Double, delta: Double, m: DenseVector[Double], mAdapt: 
     theta: DenseVector[Double],
     phi: DenseVector[Double]) = {
 
-    val ap = ll(propTheta) + propPhi.t * propPhi * 0.5 -
-      ll(theta) - phi.t * phi * 0.5
+    val ap = ll(propTheta) + priorPhi.logPdf(propPhi) +
+      ll(theta) - priorPhi.logPdf(phi)
+
     if (ap.isNaN) {
       -1e99
     } else {
-      (-ap).min(0.0)
+      ap
     }
   }
 
@@ -143,11 +147,9 @@ case class HmcDa(lambda: Double, delta: Double, m: DenseVector[Double], mAdapt: 
       phi <- priorPhi
       eps = exp(s.logeps) // use current value of step size
       lm = max(1, round(lambda / eps).toInt)
-      _ = println(s"current step size: $eps")
-      _ = println(s"ratio mate: ${lambda / eps}")
-      _ = println(s"Number of leapfrog steps: $lm")
       (propPhi, propTheta) = leapfrogs(s.theta, phi, eps).
         take(lm).last
+      _ = println(s"proposed parameters $propTheta")
       a = logAcceptance(propTheta, propPhi, s.theta, phi)
       (hm1, logeps1) = if (s.iter < mAdapt) {
         updateEps(s.iter, log(10) + s.logeps,

@@ -6,7 +6,7 @@ import math._
 
 /**
   * No U-turn sampler with dual averaging, HMC with selection of step size
-  * epsilon and number of leapgrog steps l in an adaptation phase
+  * epsilon and number of leapfrog steps l in an adaptation phase
   * TODO: This should be refactored to share some code with HMC methods
   * and split into smaller functions
   * TODO: What is deltamax!?
@@ -42,31 +42,22 @@ deltamax: Double) {
     loop(initTheta, initPhi, eps)
   }
 
-  private def leapfrogHalfStep(
-    theta: DenseVector[Double],
-    phi: DenseVector[Double],
-    eps: Double) = 
-      phi + eps * 0.5 * gradient(theta)
-
+  /**
+    * Prior distribution for the momentum variables
+    */
   def priorPhi = {
     val zero = DenseVector.zeros[Double](m)
     MultivariateGaussian(zero, DenseMatrix.eye[Double](m))
   }
 
-  private def logAcceptance(
-    propTheta: DenseVector[Double],
-    propPhi: DenseVector[Double],
+  /**
+    * Update the value of the momentum
+    */
+  private def leapfrogHalfStep(
     theta: DenseVector[Double],
-    phi: DenseVector[Double]) = {
-
-    val ap = ll(propTheta) - propPhi.t * propPhi * 0.5 -
-      ll(theta) + phi.t * phi * 0.5
-    if (ap.isNaN) {
-      -1e99
-    } else {
-      (-ap).min(0.0)
-    }
-  }
+    phi: DenseVector[Double],
+    eps: Double) = 
+      phi + eps * 0.5 * gradient(theta)
 
   /**
     * Perform a leapfrog update with 1 step
@@ -79,8 +70,30 @@ deltamax: Double) {
     val p1 = leapfrogHalfStep(theta, phi, eps)
     val t1 = theta + eps * p1
     val p2 = leapfrogHalfStep(t1, p1, eps)
+    (t1, p2)
+  }
 
-    (p2, t1)
+  private def logAcceptance(
+    propTheta: DenseVector[Double],
+    propPhi: DenseVector[Double],
+    theta: DenseVector[Double],
+    phi: DenseVector[Double]) = {
+
+    val ap = ll(propTheta) + priorPhi.logPdf(propPhi) +
+      ll(theta) - priorPhi.logPdf(phi)
+
+    // println(s"new ll ${ll(propTheta)}")
+    // println(s"old ll ${ll(theta)}")
+    // println(s"old kinetic ${phi.t * phi * 0.5}")
+    // println(s"new kinetic ${propPhi.t * propPhi * 0.5}")
+    // println(s"gradient $propPhi")
+    // println(s"log acceptance probability is ${ap}")
+
+    if (ap.isNaN) {
+      -1e99
+    } else {
+      ap
+    }
   }
 
   /**
@@ -102,7 +115,7 @@ deltamax: Double) {
     val ra = 1 / (m + t0)
     val hm = (1 - ra) * hm0 + ra * (delta - acceptProb / nAccept)
     val logem = mu - (sqrt(m) / gamma) * hm
-    val logem1 = pow(m, -k) * logem + (1 - pow(m, -k)) * logeps0
+    val logem1 = pow(m, -k) * logem + (1.0 - pow(m, -k)) * logeps0
 
     (hm0, logem1)
   }
@@ -230,6 +243,7 @@ deltamax: Double) {
       phi <- priorPhi
       u <- Uniform(0, exp(ll(s.theta) + priorPhi.logPdf(phi)))
       eps = exp(s.logeps)
+      _ = println(s"current step size $eps")
       initst = TreeState(s.theta, phi, s.theta, phi, s.theta, 1, 1, 0.0, 0)
       st = loopTrees(u, eps, 0, phi, s.theta)(initst)
       (hm1, logeps1) = if (s.iter < mAdapt) {

@@ -27,10 +27,10 @@ trait TestModel {
   }
 
   val params = GaussianProcess.Parameters(
-    MeanParameters.plane(DenseVector(-2.0, 0.05)),
+    MeanParameters.zero,
     Vector(KernelParameters.se(1.0, 2.0), KernelParameters.white(0.09))
   )
-  
+
   val covFn = KernelFunction.apply(params.kernelParameters)
   val dist = Location.euclidean _
 
@@ -40,29 +40,28 @@ trait TestModel {
     sigma <- Rand.always(2.0) // InverseGamma(0.001, 0.001)
     alpha <- Gaussian(0.0, 5.0)
     beta <- Gaussian(0.0, 5.0)
-  } yield GaussianProcess.Parameters(
-    MeanParameters.plane(DenseVector(alpha, beta)),
-    Vector(KernelParameters.se(h, sigma), KernelParameters.white(v))
-  )
+  } yield
+    GaussianProcess.Parameters(
+      MeanParameters.plane(DenseVector(alpha, beta)),
+      Vector(KernelParameters.se(h, sigma), KernelParameters.white(v))
+    )
 }
 
 object SimulateGp extends App with TestModel {
   val xs = GaussianProcess.samplePoints(-10.0, 10.0, 30).map(One.apply)
   val ys = GaussianProcess.draw(xs, dist, params).draw
 
-  val out = new java.io.File("data/simulated_gp.csv")
+  val out = new java.io.File("examples/data/simulated_gp.csv")
   out.writeCsv(xs.map(_.x) zip ys.data.toVector, rfc.withHeader("x", "y"))
 }
 
 object FitGp extends App with TestModel {
   // read in data
-  val rawData = Paths.get("data/simulated_gp.csv")
+  val rawData = Paths.get("examples/data/simulated_gp.csv")
   val reader = rawData.asCsvReader[List[Double]](rfc.withHeader)
-  val data = reader.
-    collect { 
-      case Right(a) => GaussianProcess.Data(One(a.head), a(1))
-    }.
-    toVector
+  val data = reader.collect {
+    case Right(a) => GaussianProcess.Data(One(a.head), a(1))
+  }.toVector
 
   // create a regular grid of points to draw from the GP posterior
   implicit val integralD = scala.math.Numeric.DoubleAsIfIntegral
@@ -71,13 +70,13 @@ object FitGp extends App with TestModel {
   // draw from the GP posterior at values of testPoints
   val fitted = Predict.fit(testPoints ++ data.map(_.x), data, dist, params)
 
-  // combine 
+  // combine
   val out = (testPoints.map(_.x) zip fitted.map(_.mu) zip
     Summarise.getIntervals(DenseVector(fitted.map(_.mu).toArray),
-      diag(DenseVector(fitted.map(_.sigma).toArray)), 0.975)).
-    map { case ((a, b), (c, d)) => (a, b, c, d) }
+                           diag(DenseVector(fitted.map(_.sigma).toArray)),
+                           0.975)).map { case ((a, b), (c, d)) => (a, b, c, d) }
 
-  val outFile = new java.io.File("data/fitted_gp.csv")
+  val outFile = new java.io.File("examples/data/fitted_gp.csv")
   outFile.writeCsv(out, rfc.withHeader("x", "mean", "upper", "lower"))
 }
 
@@ -85,16 +84,14 @@ object ParametersSimulatedGp extends App with TestModel {
   implicit val system = ActorSystem("fit_simulated_gp")
   implicit val materializer = ActorMaterializer()
 
-  val rawData = Paths.get("data/simulated_gp.csv")
+  val rawData = Paths.get("examples/data/simulated_gp.csv")
   val reader = rawData.asCsvReader[List[Double]](rfc.withHeader)
-  val data = reader.
-    collect { 
-      case Right(a) => GaussianProcess.Data(One(a.head), a(1))
-    }.
-    toVector
+  val data = reader.collect {
+    case Right(a) => GaussianProcess.Data(One(a.head), a(1))
+  }.toVector
 
-  def proposal(delta: Double)(ps: Vector[KernelParameters]) = ps traverse {
-    p => p match {
+  def proposal(delta: Double)(ps: Vector[KernelParameters]) = ps traverse { p =>
+    p match {
       case SquaredExp(h, s) =>
         for {
           z1 <- Gaussian(0.0, delta)
@@ -107,27 +104,62 @@ object ParametersSimulatedGp extends App with TestModel {
           z <- Gaussian(0.0, delta)
           news = s * math.exp(z)
         } yield KernelParameters.white(news)
-    }}
+    }
+  }
 
-  def priorKernel(ps: Vector[KernelParameters]) = ps.map(p => p match {
-    case SquaredExp(h, sigma) =>
-      InverseGamma(0.001, 0.001).logPdf(h) +
-      InverseGamma(0.001, 0.001).logPdf(sigma)
-    case White(s) =>
-      InverseGamma(0.001, 0.001).logPdf(s)
-  }).sum
+  def priorKernel(ps: Vector[KernelParameters]) =
+    ps.map(p =>
+        p match {
+          case SquaredExp(h, sigma) =>
+            InverseGamma(0.001, 0.001).logPdf(h) +
+              InverseGamma(0.001, 0.001).logPdf(sigma)
+          case White(s) =>
+            InverseGamma(0.001, 0.001).logPdf(s)
+      })
+      .sum
 
   // get iterations from command line argument
   val nIters: Int = args.lift(0).map(_.toInt).getOrElse(100000)
 
-  val iters = Mcmc.sampleWithState(data, Gamma(3, 0.5),
-    priorKernel, Gaussian(1.0, 1.0), proposal(0.05), dist, prior.draw)
+  val iters = Mcmc.sample(data,
+                          priorKernel,
+                          Gaussian(1.0, 1.0),
+                          proposal(0.05),
+                          dist,
+                          prior.draw)
 
-  def format(s: Mcmc.State): List[Double] = 
-    s.p.kernelParameters.flatMap(_.toList).toList ::: s.p.meanParameters.toList
-  
-  // write iters to file
-  Streaming.
-    writeParallelChain(iters, 2, 100000, "data/gpmcmc", format).
-    runWith(Sink.onComplete(_ => system.terminate()))
+  def format(p: GaussianProcess.Parameters): List[Double] =
+    p.kernelParameters.flatMap(_.toList).toList ::: p.meanParameters.toList
+
+  // write multiple parallel chains to files
+  Streaming
+    .writeParallelChain(iters, 2, 100000, "examples/data/gpmcmc", format)
+    .runWith(Sink.onComplete(_ => system.terminate()))
+}
+
+object HmcParameters extends App with TestModel {
+  implicit val system = ActorSystem("fit_simulated_gp")
+  implicit val materializer = ActorMaterializer()
+
+  val rawData = Paths.get("examples/data/simulated_gp.csv")
+  val reader = rawData.asCsvReader[List[Double]](rfc.withHeader)
+  val data = reader.collect {
+    case Right(a) => GaussianProcess.Data(One(a.head), a(1))
+  }.toVector
+
+  val ll = GaussianProcess.naiveLogLikelihood(data, dist)
+  val m = DenseVector.ones[Double](3)
+  val iters = Hmc.sampleGp(data, dist, params, ll, m, 0.5, 0.65, 1000)
+
+  def format(s: HmcState): List[Double] = 
+    s.theta.data.toList ++ List(s.accepted.toDouble)
+
+  // write multiple parallel chains to files
+  Streaming
+    .writeParallelChain(iters,
+                        2,
+                        10000,
+                        "examples/data/gpmcmc_hmc_0.01_10",
+                        format)
+    .runWith(Sink.onComplete(_ => system.terminate()))
 }

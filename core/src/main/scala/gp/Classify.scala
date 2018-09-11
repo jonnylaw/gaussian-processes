@@ -12,28 +12,23 @@ object Classify {
     * @param c the class to consider
     * @return a Double representing the p(y = c | fx)
     */
-  def softmax(
-    fx: DenseVector[Double],
-    c:  Int): Double = {
+  def softmax(fx: DenseVector[Double], c: Int): Double = {
 
     exp(fx(c)) / sum(exp(fx))
   }
 
-  def delta(
-    y: DenseVector[Int],
-    c: Int): Int = {
+  def delta(y: DenseVector[Int], c: Int): Int = {
 
     if (y(c - 1) == 1) 1 else 0
   }
 
   /**
     * Log-likelihood for multi-class classification
-    * @param xs 
+    * @param xs
     */
-  def softmaxLl(
-    fxs:     Seq[Double],
-    ys:      Seq[DenseVector[Int]],
-    classes: Int): Double = {
+  def softmaxLl(fxs: Seq[Double],
+                ys: Seq[DenseVector[Int]],
+                classes: Int): Double = {
 
     val ls = for {
       (x, y) <- fxs zip ys
@@ -56,14 +51,15 @@ object Classify {
   }
 
   def objective(
-    a:       DenseVector[Double],
-    fxs:     Seq[DenseVector[Double]],
-    ys:      Seq[Int],
-    classes: Int
+      a: DenseVector[Double],
+      fxs: Seq[DenseVector[Double]],
+      ys: Seq[Int],
+      classes: Int
   ) = {
     val f = DenseVector.vertcat(fxs: _*)
     val y = DenseVector.vertcat(encodeLabels(ys, classes): _*)
-    - 0.5 * (a dot f) + (y dot f) + sum(log(fxs.map(fx => exp(fx)).reduce(_+_)))
+    -0.5 * (a dot f) + (y dot f) + sum(
+      log(fxs.map(fx => exp(fx)).reduce(_ + _)))
   }
 
   /**
@@ -85,51 +81,49 @@ object Classify {
   /**
     * Perform Newton-Raphson to determine the (unique) maximum value for f
     * GPML Algorithm 3.3
-    * @param ys a sequence of labels of length n 
+    * @param ys a sequence of labels of length n
     * @param ks a sequence of covariance matrices of length c with
     * @param tol the tolerance of the Newton Method
     * @param fxs the values of the latent function for each class
     */
-  def fit(
-    ys:      Seq[Int],
-    ks:      Seq[DenseMatrix[Double]],
-    tol:     Double,
-    classes: Int)
-    (fxs: Seq[DenseVector[Double]]) = {
+  def fit(ys: Seq[Int],
+          ks: Seq[DenseMatrix[Double]],
+          tol: Double,
+          classes: Int)(fxs: Seq[DenseVector[Double]]) = {
 
     // build a list of classification matrices
-    val pis: Seq[DenseVector[Double]] = fxs.map(fx =>
-      DenseVector(ys.map(y => softmax(fx, y)).toArray))
+    val pis: Seq[DenseVector[Double]] =
+      fxs.map(fx => DenseVector(ys.map(y => softmax(fx, y)).toArray))
 
     // vertical concatenate the pis
     val pi: DenseMatrix[Double] = DenseMatrix.vertcat(pis.map(x => diag(x)): _*)
     val n = ys.size
 
-    def loop(
-      f: Seq[DenseVector[Double]],
-      obj: Double): (Double, Seq[DenseVector[Double]]) = {
-        val es = for {
-          c <- 0 until classes
-          d = diag(sqrt(pis(c)))
-          k = ks(c)
-          l = cholesky(DenseMatrix.eye[Double](n) + d * k * d)
-          e = d * l.t \ (l \ d)
-          z = sum(log(l))
-        } yield (e, z)
+    def loop(f: Seq[DenseVector[Double]],
+             obj: Double): (Double, Seq[DenseVector[Double]]) = {
+      val es = for {
+        c <- 0 until classes
+        d = diag(sqrt(pis(c)))
+        k = ks(c)
+        l = cholesky(DenseMatrix.eye[Double](n) + d * k * d)
+        e = d * l.t \ (l \ d)
+        z = sum(log(l))
+      } yield (e, z)
 
       val d = diag(pis.reduce((a, b) => DenseVector.vertcat(a, b)))
       val m = cholesky(es.map(_._1).reduce(_ + _))
-      val fs = DenseVector.vertcat(fxs:_*)
+      val fs = DenseVector.vertcat(fxs: _*)
       val y = DenseVector.vertcat(encodeLabels(ys, classes): _*)
-      val b = (d - pi * pi.t) * fs + y - DenseVector.vertcat(pis:_*)
+      val b = (d - pi * pi.t) * fs + y - DenseVector.vertcat(pis: _*)
       val e = es.map(_._1).reduce(blockDiagonal)
       val k = ks.reduce(blockDiagonal)
       val c = e * k * b
-      val r = DenseMatrix.vertcat(Seq.fill(classes)(DenseMatrix.eye[Double](n)):_*)
-      val a = b - c + e * r * m.t \ ( m \ (r.t * c))
+      val r =
+        DenseMatrix.vertcat(Seq.fill(classes)(DenseMatrix.eye[Double](n)): _*)
+      val a = b - c + e * r * m.t \ (m \ (r.t * c))
       val zs = es.map(_._2)
       val ll = -0.5 * (a dot fs) + (y dot fs) +
-        sum(log(f.map(fx => exp(fx)).reduce(_+_))) - sum(zs)
+        sum(log(f.map(fx => exp(fx)).reduce(_ + _))) - sum(zs)
 
       val newF = ks.map(kc => kc * a)
       val newObj = objective(a, newF, ys, classes)
@@ -152,8 +146,7 @@ object Classify {
     * @param xs a new point to classify
     * @return a prediction vector of length C
     */
-  def predict(
-    k:   Seq[DenseMatrix[Double]],
-    fxs: Seq[DenseVector[Double]],
-    xs:  DenseVector[Double]): DenseVector[Double] = ???
+  def predict(k: Seq[DenseMatrix[Double]],
+              fxs: Seq[DenseVector[Double]],
+              xs: DenseVector[Double]): DenseVector[Double] = ???
 }

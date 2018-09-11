@@ -4,6 +4,7 @@ import breeze.linalg.{DenseMatrix, DenseVector}
 import breeze.stats.distributions._
 
 object Summarise {
+
   /**
     * Calculate the intervals
     */
@@ -17,7 +18,7 @@ object Summarise {
   def getDiagonal(m: DenseMatrix[Double]): Vector[Double] = {
     for {
       i <- Vector.range(0, m.cols)
-    } yield m(i,i)
+    } yield m(i, i)
   }
 
   /**
@@ -27,16 +28,13 @@ object Summarise {
     * @param interval the desired interval to return between zero and one
     * @return a Vector containing the intervals
     */
-  def getIntervals(
-    mean: DenseVector[Double],
-    covariance: DenseMatrix[Double],
-    interval: Double): Vector[(Double, Double)] = {
+  def getIntervals(mean: DenseVector[Double],
+                   covariance: DenseMatrix[Double],
+                   interval: Double): Vector[(Double, Double)] = {
 
-    (mean.data, getDiagonal(covariance)).
-      zipped.
-      map { case (mu, cov) =>
+    (mean.data, getDiagonal(covariance)).zipped.map {
+      case (mu, cov) =>
         (getInterval(mu, cov, interval), getInterval(mu, cov, 1.0 - interval))
-      }.
-      toVector
+    }.toVector
   }
 }

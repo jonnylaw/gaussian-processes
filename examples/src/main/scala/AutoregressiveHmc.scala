@@ -8,6 +8,7 @@ import core.dlm.model._
 import akka.actor.ActorSystem
 import akka.stream._
 import scaladsl._
+import math._
 
 trait Ar1Model {
   def arStep(p: DenseVector[Double])(a0: Double) = {
@@ -33,8 +34,8 @@ trait Ar1Model {
 }
 
 object ArHmc extends App with Ar1Model {
-  // implicit val system = ActorSystem("fit_simulated_gp")
-  // implicit val materializer = ActorMaterializer()
+  implicit val system = ActorSystem("fit_simulated_gp")
+  implicit val materializer = ActorMaterializer()
 
   def logPrior(p: DenseVector[Double]): Double = {
     val phi = p(0)
@@ -78,31 +79,34 @@ object ArHmc extends App with Ar1Model {
 
     val alphaPhi = 3.0
     val betaPhi = 4.0
-
-    // val l_sigma = 1.0
+    val lSigma = 1.0
 
     val ssa = (alphas.init, alphas.tail).zipped.map {
       case (a0, a1) => (a0 - mu) * (a1 - (mu + phi * (a0 - mu)))
     }.sum
 
-    val dphi = (alphaPhi - 1) * (betaPhi - 1) * (1 - 2 * phi) / (phi * (1 - phi) * lbeta(
-      alphaPhi,
-      betaPhi)) + 1 / (sigma * sigma) * ssa
+    // initial observation phi
+    val initPhi = - (alphas.head - mu) * (alphas.head - mu) / (2 * sigma * sigma) * (phi + log(2 * Pi * (1 - phi * phi) / (sigma * sigma)))
+
+    val dphi = (alphaPhi - 1) * (betaPhi - 1) * (1 - 2 * phi) / (phi * (1 - phi) * lbeta(alphaPhi, betaPhi)) + (1 / (sigma * sigma) * ssa)
 
     val ssb = (alphas.init, alphas.tail).zipped.map {
       case (a0, a1) => a1 - (mu + phi * (a0 - mu))
     }.sum
 
-    val dmu = -mu - (phi - 1) / math.pow(sigma, 2) * ssb
+    // initial observation mu
+    val initMu = -log(2 * Pi * (1 - phi * phi) / (sigma * sigma)) * (alphas.head - mu) * (1 - phi * phi) / (2 * sigma * sigma)
+
+    val dmu = -mu + ((1 - phi) / math.pow(sigma, 2)) * ssb
 
     val ssc = (alphas.init, alphas.tail).zipped.map {
       case (a0, a1) => math.pow(a1 - (mu + phi * (a0 - mu)), 2)
     }.sum
 
-    val dsigma = -n / sigma + (1 / math.pow(sigma, 3)) * ssc
-
     // Cauchy Prior derivative
-    // 2*sigma/(sigma-l_sigma)
+    // initial observation sigma
+    val initSigma = - (alphas.head - mu) * (alphas.head - mu) * (1 - phi * phi) / pow(sigma, 3) * (0.5 - log(2 * Pi * (1 - phi * phi)/ (sigma * sigma)))
+    val dsigma = 2*sigma/(sigma-lSigma) -n / sigma + (1 / pow(sigma, 3)) * ssc
 
     DenseVector(dphi, dmu, dsigma)
   }
@@ -111,17 +115,15 @@ object ArHmc extends App with Ar1Model {
 
   val m = DenseVector.ones[Double](3)
   val pos = (p: DenseVector[Double]) => logPrior(p) + ll(sims)(p)
-  val iters = Hmc(0.5, 0.65, m, 1000, grad(sims), ll(sims)).sample(params)
+  val iters = Hmc(3, 5, 0.0075, grad(sims), pos).sample(params)
 
   def format(s: HmcState): List[Double] = {
     s.theta.data.toList ++ List(s.accepted.toDouble)
   }
 
-  iters.steps.take(1000).foreach(println)
-
-  // Streaming
-  //   .writeParallelChain(iters, 2, 10000, "examples/data/ar1_hmc", format)
-  //   .runWith(Sink.onComplete(_ => system.terminate()))
+  Streaming
+    .writeParallelChain(iters, 2, 1000, "examples/data/ar1_hmc", format)
+    .runWith(Sink.onComplete(_ => system.terminate()))
 }
 
 object Ar1Nuts extends App {}

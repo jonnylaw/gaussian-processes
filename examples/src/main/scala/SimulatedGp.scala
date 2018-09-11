@@ -148,8 +148,7 @@ object HmcParameters extends App with TestModel {
   }.toVector
 
   val ll = GaussianProcess.naiveLogLikelihood(data, dist)
-  val m = DenseVector.ones[Double](3)
-  val iters = Hmc.sampleGp(data, dist, params, ll, m, 0.5, 0.65, 1000)
+  val iters = Hmc.sampleGp(data, dist, params, ll, 3, 10, 0.05)
 
   def format(s: HmcState): List[Double] = 
     s.theta.data.toList ++ List(s.accepted.toDouble)

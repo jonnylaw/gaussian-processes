@@ -44,17 +44,6 @@ deltamax: Double) {
     loop(initTheta, initPhi, eps)
   }
 
-  private def leapfrogStep(
-    phi: DenseVector[Double],
-    theta: DenseVector[Double],
-    eps: Double) = {
-
-    val newTheta = theta + eps * diag(m.map(1.0 / _)) * phi
-    val newPhi = phi + eps * gradient(newTheta)
-
-    (newPhi, newTheta)
-  }
-
   private def leapfrogHalfStep(
     theta: DenseVector[Double],
     phi: DenseVector[Double],
@@ -75,8 +64,8 @@ deltamax: Double) {
     theta: DenseVector[Double],
     phi: DenseVector[Double]) = {
 
-    val ap = ll(propTheta) + priorPhi.logPdf(propPhi) -
-      ll(theta) - priorPhi.logPdf(phi)
+    val ap = ll(propTheta) + propPhi.t * propPhi * 0.5 -
+      ll(theta) - phi.t * phi * 0.5
     if (ap.isNaN) {
       -1e99
     } else {
@@ -92,11 +81,11 @@ deltamax: Double) {
     phi: DenseVector[Double],
     eps: Double) = {
 
-    val (p1) = leapfrogHalfStep(theta, phi, eps)
-    val (t1, p2) = leapfrogStep(theta, p1, eps)
-    val p3 = leapfrogHalfStep(t1, p2, eps)
+    val p1 = leapfrogHalfStep(theta, phi, eps)
+    val t1 = theta + eps * diag(m.map(1.0 / _)) * p1
+    val p2 = leapfrogHalfStep(t1, p1, eps)
 
-    (p3, t1)
+    (p2, t1)
   }
 
   /**
@@ -241,7 +230,7 @@ deltamax: Double) {
     * A single step of the Hamiltonian Monte Carlo Algorithm
     * @param s the current state
     */
-  def step(s: HmcState): Rand[HmcState] = {
+  def step(s: HmcDaState): Rand[HmcDaState] = {
     for {
       phi <- priorPhi
       u <- Uniform(0, exp(ll(s.theta) + priorPhi.logPdf(phi)))
@@ -254,7 +243,7 @@ deltamax: Double) {
       } else {
         (s.hm, s.logeps)
       }
-      next = HmcState(s.iter + 1, st.theta1,
+      next = HmcDaState(s.iter + 1, st.theta1,
         s.accepted + st.nAccept, logeps1, hm1)
     } yield next
   }
@@ -262,9 +251,9 @@ deltamax: Double) {
   /**
     * Perform HMC for the Gaussian Process Hyper Parameters
     */
-  def sample(init: DenseVector[Double]): Process[HmcState] = {
+  def sample(init: DenseVector[Double]): Process[HmcDaState] = {
     val eps0 = findReasonableEpsilon(init)
-    val initState = HmcState(1, init, 0, log(eps0), 0.0)
+    val initState = HmcDaState(1, init, 0, log(eps0), 0.0)
     MarkovChain(initState)(step)
   }
 }

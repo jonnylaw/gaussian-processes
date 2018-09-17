@@ -2,8 +2,7 @@ package gp.core
 
 import GaussianProcess._
 import breeze.stats.distributions._
-import breeze.linalg.{DenseVector, DenseMatrix, cholesky, diag, inv}
-import cats.implicits._
+import breeze.linalg.{DenseVector, DenseMatrix}
 import com.github.fommil.netlib.BLAS.{getInstance => blas}
 import cats.data.Kleisli
 

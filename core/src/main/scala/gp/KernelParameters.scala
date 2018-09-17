@@ -1,9 +1,10 @@
 package gp.core
 
 import breeze.stats.distributions._
-import breeze.linalg.{DenseMatrix, DenseVector}
 import GaussianProcess._
+import breeze.linalg.DenseMatrix
 import cats.implicits._
+import math._
 
 sealed trait KernelParameters { self =>
   def map(f: Double => Double): KernelParameters
@@ -27,8 +28,7 @@ case class SquaredExp(h: Double, sigma: Double) extends KernelParameters {
   }
 }
 
-case class Matern(sigma: Double, nu: Double, l: Double)
-    extends KernelParameters {
+case class Matern(sigma: Double, nu: Double, l: Double) extends KernelParameters {
   def map(f: Double => Double): KernelParameters = {
     KernelParameters.matern(f(sigma), f(nu), f(l))
   }
@@ -57,7 +57,6 @@ case class White(sigma: Double) extends KernelParameters {
 }
 
 object KernelParameters {
-
   /**
     * Smart constructor for the squared exponential covariance parameters
     */
@@ -74,6 +73,48 @@ object KernelParameters {
   }
 
   /**
+    * Join two vectors with a condition
+    * @param xs a vector containing a type A
+    * @param ys a vector containing another type b
+    * @param cond the condition
+    */
+  def innerJoin[A, B](xs: Vector[A],
+                      ys: Vector[B],
+                      cond: (A, B) => Boolean): Vector[(A, B)] = {
+
+    for {
+      x <- xs
+      y <- ys
+      if cond(x, y)
+    } yield (x, y)
+  }
+
+  /**
+    * Sample the observation variance from a Gamma distributoin
+    * Gibbs step using a conditionally-conjugate distribution
+    * @param prior the conditional conjugate prior distribtion for the 
+    * measurement noise variance
+    * @param ys a vector of data points
+    * @param fx the currently sampled value of the function state
+    * @return a distribution over the measurement noise
+    */
+  def samplePrecY(
+    prior: Gamma,
+    ys:    Vector[Data],
+    fx:    Vector[Data]) = {
+
+    val ssy = innerJoin(ys, fx,
+      (a: Data, b: Data) => a.x === b.x).map {
+      case (y, f) => (y.y - f.y) * (y.y - f.y)
+    }.sum
+
+    val shape = prior.shape + ys.size * 0.5
+    val scale = prior.scale + 0.5 * ssy
+
+    Gamma(shape, scale)
+  }
+
+  /**
     * Sample kernel hyperparameters using the metropolis-hastings algorithm
     * @param obs the observations
     * @param dist a distance function
@@ -81,31 +122,54 @@ object KernelParameters {
     * @param prop a symmetric proposal distribution
     */
   def sample(
-      obs: Vector[Data],
-      dist: (Location[Double], Location[Double]) => Double,
-      prior: Vector[KernelParameters] => Double,
-      prop: Vector[KernelParameters] => Rand[Vector[KernelParameters]]) = {
+    obs:   Vector[Data],
+    dist:  (Location[Double], Location[Double]) => Double,
+    prior: Vector[KernelParameters] => Double,
+    prop:  Vector[KernelParameters] => Rand[Vector[KernelParameters]]) = {
 
     val proposal = (p: Parameters) =>
-      for {
-        kp <- prop(p.kernelParameters)
-      } yield p.copy(kernelParameters = kp)
+    for {
+      kp <- prop(p.kernelParameters)
+    } yield p.copy(kernelParameters = kp)
 
-    val ll = (p: Parameters) =>
-      prior(p.kernelParameters) +
-        GaussianProcess.loglikelihood(obs, dist)(p)
+    val ll = (p: Parameters) => prior(p.kernelParameters) +
+      GaussianProcess.loglikelihood(obs, dist)(p)
 
     MarkovChain.Kernels.metropolis(proposal)(ll)
   }
 
   /**
-    * Calculate the gradient of the Kernel Parameters for a given distance
+    * Transform the parameters to the whole of the real line
     */
-  def gradient(p: KernelParameters)(dist: Double): Vector[Double] = p match {
-    case SquaredExp(h, s) =>
-      Vector(math.exp(-(dist * dist) / (s * s)),
-             -(2 * h / (s * s * s)) * math.exp(-(dist * dist) / (s * s)))
-    case White(s)        => Vector(1.0)
+  def unconstrainParams(p: Vector[KernelParameters]): Vector[KernelParameters] = p map {
+    case SquaredExp(h, s) => se(log(h), log(s))
+    case White(s) => white(log(s))
+    case Matern(_, _, _) => throw new Exception("Not implemented yet")
+  }
+
+  def constrainParams(p: Vector[KernelParameters]): Vector[KernelParameters] = p map {
+    case SquaredExp(h, s) => se(exp(h), exp(s))
+    case White(s) => white(exp(s))
+    case Matern(_, _, _) => throw new Exception("Not implemented yet")
+  }
+
+  /**
+    * Calculate the gradient of the unconstrained Kernel Parameters
+    * for a given distance
+    */
+  def gradient(p: Vector[KernelParameters])(dist: Double): Vector[Double] = p flatMap {
+    case SquaredExp(hu, su) =>
+      val h = Hmc.boundedBelow(0)(hu)
+      val sc = Hmc.boundedBelow(0)(su)
+      val s = sc.constrained
+
+      Vector(math.exp(-(dist * dist) / (s * s)) + h.derivative,
+        - (2 * h.constrained / (s * s * s)) * math.exp(-(dist * dist) / (s * s)) + sc.derivative)
+
+    case White(su) => {
+      val s = Hmc.boundedBelow(0)(su)
+      Vector(1.0 + s.derivative)
+    }
     case Matern(_, _, _) => throw new Exception("Not implemented yet")
   }
 
@@ -113,18 +177,22 @@ object KernelParameters {
     * Build the tangent matrices (a matrix of partial derivatives)
     */
   def tangentMatrix(
-      observed: Vector[Data],
-      dist: (Location[Double], Location[Double]) => Double,
-      p: Vector[KernelParameters]): Vector[DenseMatrix[Double]] = {
+    observed: Vector[Data],
+    dist: (Location[Double], Location[Double]) => Double,
+    p:    Vector[KernelParameters]): Vector[DenseMatrix[Double]] = {
 
     val xs = observed.map(_.x)
-    val m = distanceMatrix(xs, dist)
-    val res = m.data.toVector map (d => p.flatMap(ps => gradient(ps)(d)))
 
-    res.transpose.map(ms => new DenseMatrix(m.rows, m.cols, ms.toArray))
+    val m = distanceMatrix(xs, dist)
+    val res = m.data.toVector map (gradient(p))
+
+    res.sequence.map (ms => new DenseMatrix(m.rows, m.cols, ms.toArray))
   }
 
-  // TODO: This is probably a fold, dropping elements from pActual to the next // element of the vector p
+  /**
+    * Transform a DenseVector containing the values of the parameter
+    * into a set of Kernel parameters
+    */
   def vectorToParams(p: Vector[KernelParameters],
                      pActual: Vector[Double]): Vector[KernelParameters] = {
 
@@ -140,6 +208,6 @@ object KernelParameters {
           }
       }
       ._1
-
   }
 }
+

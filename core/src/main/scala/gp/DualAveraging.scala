@@ -8,15 +8,16 @@ import math._
 /**
   * TODO: How to handle proposals of NaN
   */
-case class HmcDaState(
-  iter:     Int,
-  theta:    DenseVector[Double],
-  accepted: Int,
-  logeps:   Double,
-  hm:       Double)
+case class DualAverageState(
+  iter:      Int,
+  theta:     DenseVector[Double],
+  accepted:  Int,
+  logeps:    Double,
+  logepsbar: Double,
+  hm:        Double)
 
 /**
-  * Hamiltoniam Monte Carlo with dual averaging for selecting
+  * Hamiltonian Monte Carlo with dual averaging for selecting
   * optimum step size
   * @param lambda target simulation length
   * @param delta target acceptance rate
@@ -24,7 +25,7 @@ case class HmcDaState(
   * prior distribution for the momentum parameters
   * @param mAdapt the number of adaptation iterations to run
   */
-case class HmcDa(
+case class DualAverage(
   lambda: Double,
   delta: Double,
   m: DenseVector[Double],
@@ -32,86 +33,12 @@ case class HmcDa(
   gradient: DenseVector[Double] => DenseVector[Double],
   ll: DenseVector[Double] => Double) {
 
-  private def leapfrogHalfStep(
-    theta: DenseVector[Double],
-    phi: DenseVector[Double],
-    eps: Double) = 
-      phi + eps * 0.5 * gradient(theta)
-
   /**
     * Prior distribution for the momentum variables
     */
   def priorPhi = {
     val zero = DenseVector.zeros[Double](m.size)
     MultivariateGaussian(zero, diag(m))
-  }
-
-  /**
-    * Perform a leapfrog update with 1 step
-    */
-  def leapfrog(
-    theta: DenseVector[Double],
-    phi: DenseVector[Double],
-    eps: Double) = {
-
-    val p1 = leapfrogHalfStep(theta, phi, eps)
-    val t1 = theta + eps * diag(m.map(1.0 / _)) * p1
-    val p3 = leapfrogHalfStep(t1, p1, eps)
-
-    (t1, p3)
-  }
-
-  private def leapfrogs(
-    theta: DenseVector[Double],
-    phi: DenseVector[Double],
-    eps: Double): Stream[(DenseVector[Double], DenseVector[Double])] = {
-
-    Stream
-      .iterate((theta, phi)) {
-        case (t, p) =>
-          leapfrog(t, p, eps)
-      }
-  }
-
-  private def logAcceptance(
-    propTheta: DenseVector[Double],
-    propPhi: DenseVector[Double],
-    theta: DenseVector[Double],
-    phi: DenseVector[Double]) = {
-
-    val ap = ll(propTheta) + priorPhi.logPdf(propPhi) +
-      ll(theta) - priorPhi.logPdf(phi)
-
-    if (ap.isNaN) {
-      -1e99
-    } else {
-      ap
-    }
-  }
-
-  def findReasonableEpsilon(theta: DenseVector[Double]): Double = {
-    println("finding reasonable epsilon")
-
-    val eps = 1.0
-    val phi = priorPhi.draw
-    val (initTheta, initPhi) = leapfrog(theta, phi, eps)
-    def prop(propTheta: DenseVector[Double], propPhi: DenseVector[Double]) =
-      logAcceptance(propTheta, propPhi, theta, phi)
-    val i = prop(initTheta, initPhi) > log(0.5)
-    val a = if (i) 1.0 else -1.0
-
-    def loop(thetaP: DenseVector[Double],
-      phiP: DenseVector[Double], curEps: Double): Double = {
-
-      if (a * prop(thetaP, phiP) > -a * log(2)) {
-        val (propTheta, propPhi) = leapfrog(theta, phi, curEps)
-        loop(propTheta, propPhi, pow(2, a) * curEps)
-      } else {
-        curEps
-      }
-    }
-
-    loop(initTheta, initPhi, eps)
   }
 
   /**
@@ -126,15 +53,19 @@ case class HmcDa(
     acceptProb: Double,
     k:     Double = 0.75,
     gamma: Double = 0.05,
-    t0:    Double = 10
-    )(hm0: Double, logeps0: Double): (Double, Double) = {
+    t0:    Double = 10.0
+  )(hm0: Double,
+    logeps0: Double,
+    logepsbar0: Double): (Double, Double, Double) = {
 
-    val ra = 1 / (m + t0)
+    val md = m.toDouble
+    val ra = 1 / (md + t0)
     val hm = (1 - ra) * hm0 + ra * (delta - acceptProb)
-    val logem = mu - (sqrt(m) / gamma) * hm
-    val logem1 = pow(m, -k) * logem + (1 - pow(m, -k)) * logeps0
+    val logeps1 = mu - (sqrt(md) / gamma) * hm
+    val power = pow(md, -k)
+    val logepsbar1 = power * logeps1 + (1.0 - power) * logepsbar0
 
-    (hm, logem1)
+    (hm, logeps1, logepsbar1)
   }
 
   /**
@@ -142,32 +73,32 @@ case class HmcDa(
     * with dual averaging
     * @param s the current state
     */
-  def step(s: HmcDaState): Rand[HmcDaState] = {
+  def step(mu: Double)(s: DualAverageState): Rand[DualAverageState] = {
     for {
       phi <- priorPhi
-      eps = exp(s.logeps) // use current value of step size
-      lm = max(1, round(lambda / eps).toInt)
-      (propPhi, propTheta) = leapfrogs(s.theta, phi, eps).
-        take(lm).last
-      _ = println(s"proposed parameters $propTheta")
-      a = logAcceptance(propTheta, propPhi, s.theta, phi)
-      (hm1, logeps1) = if (s.iter < mAdapt) {
-        updateEps(s.iter, log(10) + s.logeps,
-          min(1.0, exp(a)))(s.hm, s.logeps)
+      eps = exp(s.logeps)
+      lm = max(1, round(lambda / eps).toInt).min(1000)
+      (propTheta, propPhi) = Hmc.leapfrogs(eps, gradient, lm)(s.theta, phi)
+      a = Hmc.logAcceptance(propTheta, propPhi, s.theta, phi, ll, priorPhi)
+      // (hm1, logeps1, logepsbar1) = (s.hm, s.logeps, s.logepsbar)
+      (hm1, logeps1, logepsbar1) = if (s.iter < mAdapt) {
+        if (s.iter % (mAdapt / 10) == 0)
+          println(s"Adaptation Phase: Iteration ${s.iter} / $mAdapt, Epsilon: $eps, Leapfrog steps: $lm")
+        updateEps(s.iter, mu, min(1.0, exp(a)))(s.hm, s.logeps, s.logepsbar)
       } else {
-        (s.hm, s.logeps)
+        if (s.iter % 1000 == 0)
+          println(s"Main sampling run, iteration ${s.iter}, accepted ${s.accepted.toDouble / s.iter}")
+        (s.hm, s.logepsbar, s.logepsbar)
       }
-      _ = if (s.iter < 1000 && s.iter % 100 == 0) {
-        println(s"current iteration: ${s.iter}")
-        println(s"current step size: ${exp(logeps1)}")
-        println(s"current hm: ${hm1}")
-        println(s"current number of steps $lm")
-      }
-      u <- Uniform(0.0, 1.0)
+      u <- Uniform(0, 1)
       next = if (log(u) < a) {
-        HmcDaState(s.iter + 1, propTheta, s.accepted + 1, logeps1, hm1)
+        // println("accepted")
+        // println(s.accepted.toDouble / s.iter)
+        DualAverageState(s.iter + 1, propTheta, s.accepted + 1,
+          logeps1, logepsbar1, hm1)
       } else {
-        s.copy(iter = s.iter + 1, logeps = logeps1, hm = hm1)
+        s.copy(iter = s.iter + 1, logeps = logeps1,
+          logepsbar = logepsbar1, hm = hm1)
       }
     } yield next
   }
@@ -175,15 +106,48 @@ case class HmcDa(
   /**
     * Perform HMC for the Gaussian Process Hyper Parameters
     */
-  def sample(init: DenseVector[Double]): Process[HmcDaState] = {
-    val eps0 = findReasonableEpsilon(init)
+  def sample(init: DenseVector[Double]): Process[DualAverageState] = {
+    val eps0 = DualAverage.findReasonableEpsilon(init, ll, priorPhi, m, gradient)
     println(s"initial step size $eps0")
-    val initState = HmcDaState(1, init, 0, log(eps0), 0.0)
-    MarkovChain(initState)(step)
+    val initState = DualAverageState(1, init, 0, log(eps0), 0.0, 0.0)
+    MarkovChain(initState)(step(log(10 * eps0)))
   }
 }
 
-object HmcDa {
+object DualAverage {
+  /**
+    * Initialise the value of epsilon
+    */
+  def findReasonableEpsilon(
+    theta: DenseVector[Double],
+    ll: DenseVector[Double] => Double,
+    priorPhi: ContinuousDistr[DenseVector[Double]],
+    m: DenseVector[Double],
+    gradient: DenseVector[Double] => DenseVector[Double]): Double = {
+    println("finding reasonable epsilon")
+
+    val eps = 1.0
+    val phi = priorPhi.draw
+    val (initTheta, initPhi) = Hmc.leapfrog(eps, gradient)(theta, phi)
+    def prop(propTheta: DenseVector[Double], propPhi: DenseVector[Double]) =
+      Hmc.logAcceptance(propTheta, propPhi, theta, phi, ll, priorPhi)
+    val i = prop(initTheta, initPhi) > log(0.5)
+    val a = if (i) 1.0 else -1.0
+
+    def loop(thetaP: DenseVector[Double],
+      phiP: DenseVector[Double], curEps: Double): Double = {
+
+      if (a * prop(thetaP, phiP) > -a * log(2.0)) {
+        val (propTheta, propPhi) = Hmc.leapfrog(curEps, gradient)(theta, phi)
+        loop(propTheta, propPhi, pow(2.0, a) * curEps)
+      } else {
+        curEps
+      }
+    }
+
+    loop(initTheta, initPhi, eps)
+  }
+
   /**
     * Sample GP parameters using HMC with dual averaging
     * @param ys a vector of observations of a GP
@@ -198,15 +162,18 @@ object HmcDa {
     delta:  Double,
     mAdapt: Int) = {
 
-    def newLl = (p: DenseVector[Double]) => ll(Hmc.vectorToParams(init, p))
-    def newGrad =
-      (p: DenseVector[Double]) => mllGradient(ys, dist)(Hmc.vectorToParams(init, p))
+    def newLl(p: DenseVector[Double]) =
+      ll(Hmc.vectorToParams(init, p))
+    def newGrad(p: DenseVector[Double]) =
+      mllGradient(ys, dist)(Hmc.vectorToParams(init, p))
 
-    val hmc = HmcDa(lambda, delta, m, mAdapt, newGrad, newLl)
+    val hmc = DualAverage(lambda, delta, m, mAdapt, newGrad, newLl)
+    val priorPhi = MultivariateGaussian(
+      DenseVector.zeros[Double](m.size), diag(m))
 
     val theta = Hmc.paramsToDenseVector(init)
-    val eps0 = hmc.findReasonableEpsilon(theta)
-    val initState = HmcDaState(1, theta, 0, log(eps0), 0.0)
-    MarkovChain(initState)(hmc.step)
+    val eps0 = findReasonableEpsilon(theta, newLl, priorPhi, m, newGrad)
+    val initState = DualAverageState(1, theta, 0, log(eps0), 0.0, 0.0)
+    MarkovChain(initState)(hmc.step(log(10) + log(eps0)))
   }
 }

@@ -9,9 +9,9 @@ import akka.actor.ActorSystem
 import akka.stream._
 import scaladsl._
 import math._
+import com.cibo.evilplot.plot.aesthetics.DefaultTheme._
+import Diagnostics._
 
-// TODO: Consider sampling on the unbounded space more carefully
-// transformations
 trait Ar1Model {
   def arStep(p: DenseVector[Double])(a0: Double) = {
     val phi = p(0)
@@ -31,32 +31,42 @@ trait Ar1Model {
     MarkovChain(init)(arStep(p))
   }
 
-  val params = DenseVector(0.8, 1.0, 0.3)
+  val params = DenseVector(0.8, 1.0, 0.2)
   val sims = arSims(params).steps.take(500).toVector
 
   /**
     * Transform the parameters to be constrained 
     */
   def constrain(p: DenseVector[Double]): Vector[Hmc.Parameter] = {
-    val phi = Hmc.bounded(0.01, 0.99)(p(0))
+    val phi = Hmc.bounded(0.1, 0.9)(p(0))
     val mu = Hmc.unbounded(p(1))
     val sigma = Hmc.boundedBelow(0)(p(2))
 
     Vector(phi, mu, sigma)
   }
 
+  // sample from the prior distributions
+  val unconstrained = for {
+    phi <- new Beta(5, 2)
+    mu <- Gaussian(1.0, 1.0)
+    sigma <- InverseGamma(10, 2)
+  } yield DenseVector(Dglm.logit(phi), mu, log(sigma))
+
+
   /**
     * Calculate the log-prior in the transformed parameter space
     */
   def logPrior(p: DenseVector[Double]): Double = {
     val ps = constrain(p)
-    // println(s"Evaluting the prior with these parameters ${ps.map(_.constrained )}")
+    val phi = ps(0).constrained
+    val mu = ps(1).constrained
+    val sigma = ps(2).constrained
 
-    val priorPhi = new Beta(3, 4).logPdf(ps(0).constrained) + ps(0).logJacobian
-    val priorMu = Gaussian(0, 1).logPdf(ps(1).constrained) + ps(1).logJacobian
-    val priorSigma = new CauchyDistribution(6.0, 6.0).logPdf(ps(2).constrained) + ps(2).logJacobian 
+    val priorPhi = new Beta(3, 4).logPdf(phi)
+    val priorMu = Gaussian(0, 1).logPdf(mu)
+    val priorSigma = new CauchyDistribution(0.0, 2.0).logPdf(sigma)
 
-    priorPhi + priorMu + priorSigma
+    priorPhi + priorMu + priorSigma + ps.map(x => abs(x.logJacobian)).sum
   }
 
   def ll(alphas: Vector[Double])(p: DenseVector[Double]) = {
@@ -66,10 +76,11 @@ trait Ar1Model {
     val sigma = ps(2).constrained
 
     val initsd = math.sqrt(math.pow(sigma, 2) / (1 - math.pow(phi, 2)))
+
     Gaussian(mu, initsd).logPdf(alphas.head) +
-      (alphas.tail zip alphas.init).map {
+      (alphas.drop(2) zip alphas.tail.init).map {
         case (a1, a0) =>
-          Gaussian(mu + phi * (a0 - mu), sigma).logPdf(a0)
+          Gaussian(mu + phi * (a0 - mu), sigma).logPdf(a1)
       }.sum
   }
 
@@ -90,74 +101,126 @@ trait Ar1Model {
     val alphaPhi = 3.0
     val betaPhi = 4.0
 
-    val lSigma = 6.0
-    val gamma = 6.0
+    // cauchy
+    val lSigma = 0.0
+    val gamma = 2.0
+
+    val muMu = 0.0
+    val sigmaMu = 1.0
 
     val ssa = (alphas.init, alphas.tail).zipped.map {
-      case (a0, a1) => (a0 - mu) * (a1 - (mu + phi * (a0 - mu)))
+      case (a0, a1) => (mu - a0) * (a1 - mu - phi * (a0 - mu))
     }.sum
 
-    val dphi = (alphaPhi - 1) * (betaPhi - 1) * (1 - 2 * phi) / (phi * (1 - phi) * lbeta(alphaPhi, betaPhi)) + (1 / (sigma * sigma) * ssa) + ps(0).derivative
+    val dphi = (alphaPhi - 1.0)/ phi + (1.0 - betaPhi) / (1.0 - phi) + (1.0 / (sigma * sigma)) * ssa + ps(0).derivative
 
     val ssb = (alphas.init, alphas.tail).zipped.map {
       case (a0, a1) => a1 - (mu + phi * (a0 - mu))
     }.sum
 
-    val dmu = -mu + ((1 - phi) / math.pow(sigma, 2)) * ssb + ps(1).derivative
+    val dmu = -(1.0 / sigmaMu * sigmaMu) * (mu - muMu) + ((1.0 - phi) / pow(sigma, 2)) * ssb + ps(1).derivative
 
     val ssc = (alphas.init, alphas.tail).zipped.map {
       case (a0, a1) => math.pow(a1 - (mu + phi * (a0 - mu)), 2)
     }.sum
 
-    // Cauchy Prior derivative
-    val dsigma = 2/Pi*math.pow(gamma+sigma-lSigma, 2) -n / sigma + (1 / pow(sigma, 3)) * ssc + ps(2).derivative
+    val dsigma = -2.0/(Pi*math.pow(gamma + sigma - lSigma, 2)) - (n.toDouble / sigma) + (1.0 / pow(sigma, 3)) * ssc + ps(2).derivative
 
     DenseVector(dphi, dmu, dsigma)
   }
 }
 
-object ArHmc extends App with Ar1Model {
-  implicit val system = ActorSystem("fit_simulated_gp")
-  implicit val materializer = ActorMaterializer()
+object Ar1Hmc extends App with Ar1Model {
+  // implicit val system = ActorSystem("ar1_hmc")
+  // implicit val materializer = ActorMaterializer()
 
-  implicit val basis = RandBasis.withSeed(2)
+  // implicit val basis = RandBasis.withSeed(103)
 
-  val pos = (p: DenseVector[Double]) => logPrior(p) + ll(sims)(p)
+  val pos = (p: DenseVector[Double]) => ll(sims)(p) + logPrior(p)
 
-  val unconstrained =
-    DenseVector(Dglm.logit(params(0)), params(1), log(params(2)))
+  val iters = Hmc(3, 10, 0.0025, grad(sims), pos).
+    sample(unconstrained.draw)
 
-  val iters = Hmc(3, 20, 0.0275, grad(sims), pos).
-    sample(unconstrained)
-
-  def format(s: HmcState): List[Double] = {
-    constrain(s.theta).map(_.constrained).toList ++ List(s.accepted.toDouble)
+  def format(s: HmcState): Vector[Double] = {
+    constrain(s.theta).map(_.constrained).toVector// ++ List(s.accepted.toDouble)
   }
 
-  Streaming
-    .writeParallelChain(iters, 2, 10000, "examples/data/ar1_hmc", format)
-    .runWith(Sink.onComplete(_ => system.terminate()))
+  val chain = iters.
+    steps.
+    map(format).
+    drop(10000).
+    take(10000).
+    toVector
+
+  // (1 to 2).par.
+  //   map { i =>
+  //     val chain = iters.steps.map(format).take(10000).toVector
+
+  diagnostics(chain).
+    render().
+    write(new java.io.File(s"figures/ar_hmc.png"))
+
+  // Streaming
+  //   .writeParallelChain(iters, 2, 1000, "examples/data/ar1_hmc", format)
+  //   .runWith(Sink.onComplete(_ => system.terminate()))
+}
+
+object Ar1Mh extends App with Ar1Model {
+  val pos = (p: DenseVector[Double]) => ll(sims)(p) + logPrior(p)
+  val prop = (p: DenseVector[Double]) => {
+    val z = DenseVector.rand(p.length, Gaussian(0, 0.1))
+    Rand.always(p + z)
+  }
+
+  val chain = MarkovChain.metropolis(unconstrained.draw, prop)(ll(sims)).
+    steps.
+    take(10000).
+    map(s => constrain(s).map(_.constrained)).
+    toVector
+
+  diagnostics(chain).
+    render().
+    write(new java.io.File(s"figures/ar_mh.png"))
 }
 
 object Ar1Da extends App with Ar1Model {
+  implicit val system = ActorSystem("ar1_nuts")
+  implicit val materializer = ActorMaterializer()
+
   implicit val basis = RandBasis.withSeed(4)
 
   val pos = (p: DenseVector[Double]) => logPrior(p) + ll(sims)(p)
 
-  val unconstrained =
-    DenseVector(Dglm.logit(params(0)), params(1), log(params(2)))
-
   val m = DenseVector.ones[Double](3)
-  val iters = HmcDa(0.5, 0.65, m, 1000, grad(sims), pos).
-    sample(unconstrained)
+  val iters = DualAverage(10.0, 0.65, m, 1000, grad(sims), pos).
+    sample(unconstrained.draw)
 
-  def format(s: HmcState): List[Double] = 
-    s.theta.data.toList ++ List(s.accepted.toDouble)
+  def format(s: DualAverageState): List[Double] = {
+    constrain(s.theta).map(_.constrained).toList ++
+    List(s.accepted.toDouble, exp(s.logeps))
+  }
 
-  iters.
-    steps.
-    take(100).
-    map(s => constrain(s.theta).map(_.constrained)).
-    foreach(println)
+  Streaming
+    .writeParallelChain(iters, 2, 10000, "examples/data/ar1_da", format)
+    .runWith(Sink.onComplete(_ => system.terminate()))
 }
 
+object Ar1Nuts extends App with Ar1Model {
+  implicit val system = ActorSystem("ar1_nuts")
+  implicit val materializer = ActorMaterializer()
+
+  implicit val basis = RandBasis.withSeed(4321)
+
+  val pos = (p: DenseVector[Double]) => logPrior(p) + ll(sims)(p)
+
+  def format(s: DualAverageState): List[Double] = 
+    constrain(s.theta).map(_.constrained).toList
+
+  val m = DenseVector.ones[Double](3)
+  val iters = Nuts(m, 0.65, 1000, grad(sims), pos).
+    sample(unconstrained.draw)
+
+  Streaming
+    .writeParallelChain(iters, 2, 10000, "examples/data/ar1_nuts", format)
+    .runWith(Sink.onComplete(_ => system.terminate()))
+}

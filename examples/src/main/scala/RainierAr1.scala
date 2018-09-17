@@ -6,12 +6,14 @@ import com.stripe.rainier.core._
 import com.stripe.rainier.sampler._
 import kantan.csv._
 import kantan.csv.ops._
+import Diagnostics._
+import com.cibo.evilplot.plot.aesthetics.DefaultTheme._
 
 /**
   * Use automatic differentiation and HMC for inference
   * for the AR(1) parameter posterior distribution
   */
-object RanierAr extends App with Ar1Model {
+object RainierHmc extends App with Ar1Model {
   implicit val rng = ScalaRNG(4) // set a seed
 
   case class Parameters(phi: Real, mu: Real, sigma: Real)
@@ -37,8 +39,12 @@ object RanierAr extends App with Ar1Model {
 
   val iters = model.sample(HMC(10), 1000, 10000, 1)
 
-  val out = new java.io.File("examples/data/ar1_rainier.csv")
-  val headers = rfc.withHeader("mu", "phi", "sigma")
+  diagnostics(iters.map(_.values.toVector).toVector).
+    render().
+    write(new java.io.File(s"figures/ar_hmc.png"))
 
-  out.writeCsv(iters.map(_.values), headers)
+  // val out = new java.io.File("examples/data/ar1_rainier.csv")
+  // val headers = rfc.withHeader("mu", "phi", "sigma")
+
+  // out.writeCsv(iters.map(_.values), headers)
 }

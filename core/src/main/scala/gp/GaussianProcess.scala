@@ -1,7 +1,7 @@
 package gp.core
 
 import breeze.stats.distributions._
-import breeze.linalg.{DenseVector, DenseMatrix, cholesky, diag, sum, inv}
+import breeze.linalg.{DenseVector, DenseMatrix, cholesky, sum, diag}
 import breeze.numerics.log
 import cats.implicits._
 

@@ -136,29 +136,3 @@ object ParametersSimulatedGp extends App with TestModel {
     .writeParallelChain(iters, 2, 100000, "examples/data/gpmcmc", format)
     .runWith(Sink.onComplete(_ => system.terminate()))
 }
-
-object HmcParameters extends App with TestModel {
-  implicit val system = ActorSystem("fit_simulated_gp")
-  implicit val materializer = ActorMaterializer()
-
-  val rawData = Paths.get("examples/data/simulated_gp.csv")
-  val reader = rawData.asCsvReader[List[Double]](rfc.withHeader)
-  val data = reader.collect {
-    case Right(a) => GaussianProcess.Data(One(a.head), a(1))
-  }.toVector
-
-  val ll = GaussianProcess.naiveLogLikelihood(data, dist)
-  val iters = Hmc.sampleGp(data, dist, params, ll, 3, 10, 0.05)
-
-  def format(s: HmcState): List[Double] = 
-    s.theta.data.toList ++ List(s.accepted.toDouble)
-
-  // write multiple parallel chains to files
-  Streaming
-    .writeParallelChain(iters,
-                        2,
-                        10000,
-                        "examples/data/gpmcmc_hmc_0.01_10",
-                        format)
-    .runWith(Sink.onComplete(_ => system.terminate()))
-}

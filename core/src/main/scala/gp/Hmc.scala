@@ -50,19 +50,10 @@ case class Hmc(
   def step(s: HmcState): Rand[HmcState] = {
     for {
       phi <- priorPhi
-      // _ = println(s"initial momentum $phi")
       (propTheta, propPhi) = Hmc.leapfrogs(eps, gradient, l)(s.theta, phi)
-      // _ = println(s"proposed theta after $l leapfrogs: $propTheta")
-      // _ = println(s"proposed phi: $propPhi")
       a = Hmc.logAcceptance(propTheta, propPhi, s.theta, phi, ll, priorPhi)
       u <- Uniform(0, 1)
-      _ = if (s.iter % 1000 == 0) {
-        println(s"Main sampling run, iteration ${s.iter}, accepted ${s.accepted.toDouble / s.iter}")
-      }
-      // _ = println(s"u is ${log(u)}")
-      // _ = println(s"a is ${a}")
       next = if (log(u) < a) {
-        // println("accepted!")
         HmcState(s.iter + 1, propTheta, s.accepted + 1)
       } else {
         s.copy(iter = s.iter + 1)
@@ -93,11 +84,9 @@ object Hmc {
     gradient: DenseVector[Double] => DenseVector[Double])(
     theta: DenseVector[Double],
     phi: DenseVector[Double]) = {
-    val p1 = phi - eps * 0.5 * gradient(theta)
-    // println(s"momentum is $p1")
+    val p1 = phi + eps * 0.5 * gradient(theta)
     val t1 = theta + eps * p1
-    // println(s"parameters are $t1, constrained ${constrain(t1).map(_.constrained)}")
-    val p2 = p1 - eps * 0.5 * gradient(t1)
+    val p2 = p1 + eps * 0.5 * gradient(t1)
 
     (t1, p2)
   }
@@ -138,17 +127,11 @@ object Hmc {
     val thetaNans = propTheta.data.map(_.isNaN).
       foldLeft(false)((f, a) => a || f)
 
-    // println(s"prop theta ${constrain(propTheta)}")
-
     if (thetaNans) {
       -1e99
     } else {
       val ap = ll(propTheta) + priorPhi.logPdf(propPhi) -
       ll(theta) - priorPhi.logPdf(phi)
-      // println(s"proposed momentum: $propPhi")
-      // println(s"Log likelihood of theta ${constrain(theta)} is ${ll(theta)}")
-      // println(s"Log likelihood of prop theta ${constrain(propTheta)} is ${ll(propTheta)}")
-      // println(s"the acceptance probability is $ap")
 
       if (ap.isNaN) {
         -1e99

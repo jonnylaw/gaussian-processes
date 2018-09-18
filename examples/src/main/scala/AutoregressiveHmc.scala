@@ -66,7 +66,7 @@ trait Ar1Model {
     val priorMu = Gaussian(0, 1).logPdf(mu)
     val priorSigma = new CauchyDistribution(0.0, 2.0).logPdf(sigma)
 
-    priorPhi + priorMu + priorSigma + ps.map(x => abs(x.logJacobian)).sum
+    priorPhi + priorMu + priorSigma + ps.map(x => x.logJacobian).sum
   }
 
   def ll(alphas: Vector[Double])(p: DenseVector[Double]) = {
@@ -124,7 +124,7 @@ trait Ar1Model {
       case (a0, a1) => math.pow(a1 - (mu + phi * (a0 - mu)), 2)
     }.sum
 
-    val dsigma = -2.0/(Pi*math.pow(gamma + sigma - lSigma, 2)) - (n.toDouble / sigma) + (1.0 / pow(sigma, 3)) * ssc + ps(2).derivative
+    val dsigma = -gamma/(gamma + sigma - lSigma) - (n.toDouble / sigma) + (1.0 / pow(sigma, 3)) * ssc + ps(2).derivative
 
     DenseVector(dphi, dmu, dsigma)
   }

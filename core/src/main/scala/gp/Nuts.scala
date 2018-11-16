@@ -81,7 +81,7 @@ case class Nuts(
     phi:    DenseVector[Double]): TreeState = {
 
     if (j == 0) {
-      val (t1, p1) = Hmc.leapfrog(eps, gradient)(theta, phi)
+      val (t1, p1) = Hmc.leapfrog(eps * v, gradient)(theta, phi)
       val a1 = ll(t1) + priorPhi.logPdf(p1)
       val n = if (a1 >= log(u)) 1 else 0
       val s = if (deltamax + a1 > log(u)) 1 else 0

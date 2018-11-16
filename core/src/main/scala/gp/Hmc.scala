@@ -25,7 +25,7 @@ case class HmcState(
   * @param l the number of leapgfrog steps
   * @param eps the step size
   * @param gradient
-  * @param ll 
+  * @param ll
   */
 case class Hmc(
   m: Int,

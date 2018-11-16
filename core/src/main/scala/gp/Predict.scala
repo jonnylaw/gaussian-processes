@@ -25,14 +25,14 @@ object Predict {
     DenseVector(xs.map(d => covFn(dist(d, newx))).toArray)
   }
 
-  /** 
+  /**
     * Forward solve a lower-triangular linear system
     * with a single RHS
-    * 
+    *
     * @param A A lower-triangular matrix
     * @param y A single vector RHS
     *
-    * @return The solution, x, of the linear system A x = y 
+    * @return The solution, x, of the linear system A x = y
     */
   def forwardSolve(
     A: DenseMatrix[Double],
@@ -46,7 +46,7 @@ object Predict {
     * Algorithm 2.1 from GPML
     * An efficient way of learning a Gaussian Process at finitely many
     * points newXs
-    * @param newXs the new locations we are interesting in determining the 
+    * @param newXs the new locations we are interesting in determining the
     * value of the posterior of f
     * @param observed the currently observed (noisy) values of the function
     * @param mod a Gaussian Process Model
@@ -56,19 +56,20 @@ object Predict {
     newXs:    Vector[Location[Double]],
     observed: Vector[Data],
     dist:     (Location[Double], Location[Double]) => Double,
-    p:        Parameters
-  ) = {
+    p:        Parameters): Vector[(Location[Double], Gaussian)] = {
 
     val covFn = KernelFunction.apply(p.kernelParameters)
 
+    val x = observed.map(_.x)
+    // add a small amount for numerical stability (tikhonov regularization)
+    val nugget = diag(DenseVector.fill(x.size)(1e-6))
+    val kxx = KernelFunction.buildCov(x, covFn, dist) + nugget
+    val l = cholesky(kxx)
+
     for {
       xs <- newXs
-      x = observed.map(_.x)
 
       // calculate covariances,
-      // add a small amount for numerical stability (tikhonov regularization)
-      nugget = diag(DenseVector.fill(x.size)(1e-6))
-      kxx = KernelFunction.buildCov(x, covFn, dist) + nugget
       kxy = buildDistVec(xs, x, covFn, dist)
       kyy = covFn(dist(xs, xs))
 
@@ -77,12 +78,11 @@ object Predict {
       ys = DenseVector(observed.map(_.y).toArray) - DenseVector(x.map(meanFn).toArray)
 
       // calculate the mean and covariance
-      l = cholesky(kxx)
       u = forwardSolve(l, kxy)
       v = forwardSolve(l, ys)
       mean = meanFn(xs) + u.t * v
       cov = kyy - u.t * u
-    } yield Gaussian(mean, cov)
+    } yield (xs, Gaussian(mean, math.sqrt(cov)))
   }
 
   def predict(

@@ -29,7 +29,7 @@ object GaussianProcess {
   case class Data(x: Location[Double], y: Double)
 
   /**
-    * A realisation of a Gaussian Process at 
+    * A realisation of a Gaussian Process at
     */
   case class TimePoint(t: Double, ys: Vector[Data])
 
@@ -88,19 +88,20 @@ object GaussianProcess {
     val covariance = KernelFunction.buildCov(xs,
       KernelFunction.apply(p.kernelParameters), dist)
     val mean = DenseVector(xs.map(MeanFunction.apply(p.meanParameters)).toArray)
-    
+
     for {
       fx <- MultivariateGaussian(mean, covariance)
     } yield vecToData(fx, xs)
   }
-  
+
   /**
     * Calculate the marginal log-likelihood of a single observation
     * of a Gaussian process
     */
   def loglikelihood(
     observed: Vector[Data],
-    dist:     (Location[Double], Location[Double]) => Double) = { p: Parameters =>
+    dist:     (Location[Double], Location[Double]) => Double)
+    (p: Parameters) = {
 
     val covFn = KernelFunction(p.kernelParameters)
     val xs = observed.map(_.x)
@@ -110,12 +111,13 @@ object GaussianProcess {
     val nugget = diag(DenseVector.fill(xs.size)(1e-3))
     val kxx = KernelFunction.buildCov(xs, covFn, dist) + nugget
 
+    // take the mean away from the observed data
     val meanFn = MeanFunction.apply(p.meanParameters)
     val ys = DenseVector(observed.map(_.y).toArray) - DenseVector(xs.map(meanFn).toArray)
     val l = cholesky(kxx)
     val u = Predict.forwardSolve(l, ys)
 
-    - 0.5 * u dot u - 0.5 * sum(log(diag(l))) - n * 0.5 * log(2 * math.Pi)
+    - 0.5 * u dot u - sum(log(diag(l))) - n * 0.5 * log(2 * math.Pi)
   }
 
   /**
@@ -127,7 +129,7 @@ object GaussianProcess {
 
   /**
     * Draw from a conditional Gaussian distribution in a more efficient way
-    * because we only have to calculate the cholesky of the covariance of the 
+    * because we only have to calculate the cholesky of the covariance of the
     * prior distribution which only has to be computed once for every new sample X | Y
     * http://www.stats.ox.ac.uk/~doucet/doucet_simulationconditionalgaussian.pdf
     * Sampling X | Y

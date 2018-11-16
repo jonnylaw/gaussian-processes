@@ -69,8 +69,7 @@ object MeanParameters {
     obs:   Vector[Data],
     xs:    Vector[Location[Double]],
     dist:  (Location[Double], Location[Double]) => Double,
-    p:     Parameters
-  ): MeanParameters = { 
+    p:     Parameters): MeanParameters = {
 
     val covFn = KernelFunction.apply(p.kernelParameters)
     // build the design matrix
@@ -83,7 +82,7 @@ object MeanParameters {
     val priorPrec = diag(DenseVector.fill(x.cols)(1.0/prior.variance))
     val prec = x.t * (kxx \ x) + priorPrec
 
-    val y = DenseVector(obs.map(_.y).toArray)
+    val y = DenseVector(obs.map(_.y).toArray) 
 
     val u: DenseVector[Double] = Predict.forwardSolve(l, y)
     val mean: DenseVector[Double] = prec \ (priorPrec * DenseVector.fill(x.cols)(prior.mean) + (x.t * u))
@@ -96,7 +95,7 @@ object MeanParameters {
   }
 
   /**
-    * Sample mean hyperparameters 
+    * Sample mean hyperparameters
     * @param delta the variance of the Gaussian proposal distribution
     * @param obs a collection of multivariate observations
     * @param prior the prior distribution of the hyperparameters
@@ -109,5 +108,7 @@ object MeanParameters {
   ) = { p: Parameters => p.meanParameters match {
     case Plane(beta) =>
       Rand.always(p.copy(meanParameters = samplePlane(prior, obs, xs, dist, p)))
+    case Zero =>
+      Rand.always(p)
   }}
 }

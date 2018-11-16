@@ -2,7 +2,7 @@ package examples
 
 import breeze.stats.distributions._
 import breeze.linalg.{DenseVector, DenseMatrix, diag}
-import core.dlm.model._
+import dlm.core.model._
 import gp.core._
 import cats.implicits._
 
@@ -14,78 +14,74 @@ import cats.implicits._
   */
 object FitDlmGp {
   case class State(
-    p:     DlmGp.Parameters,
-    state: Vector[(Double, DenseVector[Double])]
-  )
+    p:   DlmGp.Parameters,
+    dlm: GibbsSampling.State)
 
   /**
-    * Calculate Y_t - F(X_t)
-    * @param ys a vector of observations
+    * Calculate Y_t - F.t * X_t and return a collection of locations and
+    * measurements
+    * @param ys a collection of time series measured at different locations
+    * vector of observations
     * @param state a vector of the DLM state X_t
+    * @param f the time dependent observation matrix
+    * @return a vector of
     */
   def residual(
-    ys: Vector[DlmGp.Data],
-    state: Vector[(Double, DenseVector[Double])]
-  ): Vector[(Double, Vector[GaussianProcess.Data])] = {
+    ys: Vector[(Location[Double], Vector[Data])],
+    state: Vector[SamplingState],
+    f: Double => DenseMatrix[Double]): Vector[GaussianProcess.Data] = {
 
-    ys.map(d => (d.time, for {
-      (loc, measurement) <- d.locations zip d.measurement.data
-    } yield GaussianProcess.Data(loc, measurement)))
+    val locations = ys.map(_._1)
+    val ts: Vector[Data] = combineTs(ys)
+    val residual: Vector[Array[Option[Double]]] = (ts.map(_.observation) zip state.tail).
+      map { case (d, s) =>
+        val ft: DenseVector[Double] = f(s.time).t * s.sample
+        d.data.zipWithIndex.map {
+          case (Some(y), i) => Some(y - ft(i))
+          case _ => None
+        }
+      }
+
+    residual.flatMap(r => r.zipWithIndex.
+      map { case (Some(r), i) => GaussianProcess.Data(locations(i), r) })
   }
 
   /**
-    * Convert a DLM GP to a Time series of mean values
-    * @param ys a vector of observations from m locations
-    * @return a time series vector containing the mean value across all
-    * locations 
+    * Combine time series at multiple locations into one multivariate time
+    * series
     */
-  def gptoTimeSeries(
-    ys: Vector[DlmGp.Data]) = {
-
-    ys.map { d => Dlm.Data(d.time, d.measurement.map(_.some)) }
-  }
-
-  /**
-    * 
-    */
-  def dlmParameters(
-    kxx: DenseMatrix[Double],
-    p: DlmGp.Parameters): DlmParameters = {
-
-    DlmParameters(kxx, p.w, p.m0, p.c0)
-  }
+  def combineTs(ys: Vector[(Location[Double], Vector[Data])]): Vector[Data] =
+    ys.flatMap(_._2).groupBy(_.time).
+      map { case (t, ds) => Data(t, DenseVector(ds.flatMap(_.observation.data).toArray)) }.toVector
 
   def step(
+    priorV:    InverseGamma,
     priorW:    InverseGamma,
     priorKern: Vector[KernelParameters] => Double,
     propKern:  Vector[KernelParameters] => Rand[Vector[KernelParameters]],
     mod:       DlmGp.Model,
-    ys:        Vector[DlmGp.Data],
-    xs:        Vector[Location[Double]]) = { st: State =>
+    ys:        Vector[(Location[Double], Vector[Data])]) = { st: State =>
 
     val covFn = KernelFunction(st.p.gp.kernelParameters)
+    val xs = ys.map(_._1)
     val nugget = diag(DenseVector.fill(xs.size)(1e-3))
     val kxx = KernelFunction.buildCov(xs, covFn, mod.dist) + nugget
-    val dlmP = dlmParameters(kxx, st.p)
-
-    val dlm = toDlmModel(mod)
+    val ts = combineTs(ys)
 
     for {
-      state <- Smoothing.ffbsDlm(dlm, gptoTimeSeries(ys), dlmP)
-      system <- GibbsSampling.sampleSystemMatrix(priorW, state, dlm.g)
-      res = residual(ys, state)
-      kp <- KernelParameters.sample(res.head._2, mod.dist,
-        priorKern, propKern)(st.p.gp)
-    } yield State(st.p.copy(
-      w = system,
-      gp = st.p.gp.copy(kernelParameters = kp.kernelParameters)),
-      state)
+      dlmSt <- GibbsSampling.stepSvd(mod.dlm, priorV, priorW, ts)(st.dlm)
+      res = residual(ys, dlmSt.state, mod.dlm.f)
+      kp <- KernelParameters.sample(res, mod.dist, priorKern, propKern)(st.p.gp)
+    } yield State(st.p.copy(dlm = dlmSt.p.copy(v = kxx),
+                            gp = st.p.gp.copy(kernelParameters = kp.kernelParameters)),
+      dlmSt)
   }
 
   /**
-    * The DLMs share the same state, change the observation matrix to reflect this
+    * The DLMs share the same state,
+    * change the observation matrix to reflect this
     */
-  def toDlmModel(mod: DlmGp.Model): DlmModel = {
+  def toDlm(mod: DlmGp.Model): Dlm = {
     val newf = mod.dim.
       map { p =>
         (time: Double) => List.fill(p)(mod.dlm.f(time)).
@@ -96,26 +92,41 @@ object FitDlmGp {
     mod.dlm.copy(f = newf)
   }
 
+  /**
+    * Perform metropolis-with-Gibbs sampling to determine the posterior
+    * distribution of the parameters of a DLM GP
+    * @param priorV
+    * @param priorW
+    * @param priorKern
+    * @param propKern the proposal distribution for the kernel parameters
+    * @param mod a DLM GP model
+    * @param ys
+    */
   def sample(
+    priorV:     InverseGamma,
     priorW:     InverseGamma,
     priorKern:  Vector[KernelParameters] => Double,
     propKern:   Vector[KernelParameters] => Rand[Vector[KernelParameters]],
     mod:        DlmGp.Model,
-    ys:         Vector[DlmGp.Data],
-    xs:         Vector[Location[Double]],
+    ys:         Vector[(Location[Double], Vector[Data])],
     initParams: DlmGp.Parameters) = {
 
     val covFn = KernelFunction.apply(initParams.gp.kernelParameters)
+    val xs = ys.map(_._1)
     val nugget = diag(DenseVector.fill(xs.size)(1e-3))
     val kxx = KernelFunction.buildCov(xs, covFn, mod.dist) + nugget
 
-    val dlmP = dlmParameters(kxx, initParams)
-    val dlmMod = toDlmModel(mod)
+    val dlmMod = toDlm(mod)
+    val ts = combineTs(ys)
 
     val init = for {
-      st <- Smoothing.ffbsDlm(dlmMod, gptoTimeSeries(ys), dlmP)
-    } yield State(initParams, st)
+      st <- SvdSampler.ffbsDlm(dlmMod, ts, initParams.dlm.copy(v = kxx))
+      _ = st.foreach(println)
+      initSt = GibbsSampling.State(initParams.dlm.copy(v = kxx), st)
+    } yield State(initParams, initSt)
 
-    MarkovChain(init.draw)(step(priorW, priorKern, propKern, mod, ys, xs))
+    MarkovChain(init.draw)(step(priorV, priorW, priorKern,
+                                propKern, mod, ys))
   }
 }
+

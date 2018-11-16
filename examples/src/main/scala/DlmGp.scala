@@ -1,6 +1,6 @@
 package examples
 
-import core.dlm.model._
+import dlm.core.model._
 import gp.core._
 import breeze.linalg.{DenseMatrix, DenseVector}
 import breeze.stats.distributions._
@@ -9,13 +9,13 @@ object DlmGp {
   /**
     * A model from the DLM GP
     * @param dim the dimension of the DLM GP, if this is omitted a composed DLM
-    * will be used
+    * will be used?
     * @param dlm a DLM model (either composed or a single model)
     * @param dist a distance function for the Gaussian Process Model
     */
   case class Model(
     dim:  Option[Int],
-    dlm:  DlmModel,
+    dlm:  Dlm,
     dist: (Location[Double], Location[Double]) => Double)
 
   /**
@@ -24,9 +24,7 @@ object DlmGp {
     * @param gp parameters of the gaussian process
     */
   case class Parameters(
-    w:  DenseMatrix[Double],
-    m0: DenseVector[Double],
-    c0: DenseMatrix[Double],
+    dlm: DlmParameters,
     gp: GaussianProcess.Parameters)
 
   case class Data(
@@ -47,21 +45,20 @@ object DlmGp {
     mod:    Model,
     params: Parameters,
     xs:     Vector[Location[Double]])
-    (time: Double, theta: DenseVector[Double]) = {
+    (time: Double, theta: DenseVector[Double]) = ???
 
-    val f = mod.dim.
-      map { p =>
-        List.fill(p)(mod.dlm.f(time)).reduce((a, b) => DenseMatrix.horzcat(a, b))
-      }.
-      getOrElse(mod.dlm.f(time))
+  //   val f = mod.dim.
+  //     map { p =>
+  //       List.fill(p)(mod.dlm.f(time)).reduce((a, b) => DenseMatrix.horzcat(a, b))
+  //     }.
+  //     getOrElse(mod.dlm.f(time))
 
-    for {
-      v <- GaussianProcess.draw(xs, mod.dist, params.gp)
-      w <- MultivariateGaussianSvd(DenseVector.zeros[Double](params.w.cols), params.w)
-      theta1 = mod.dlm.g(1.0) * theta + w
-      y = f.t * theta1 + v
-    } yield (Data(time, xs, y), theta1)
-  }
+  //   for {
+  //     ys <- Dlm.simStep(mod.dlm, params.dlm)(theta, time, 1.0)
+  //     vs <- GaussianProcess.draw(xs, mod.dist, params.gp)
+  //     // TODO: Add GP to DLM 
+  //   } yield (Data(ys._1.time, xs, ys._1.observation.map(_ + vs)), ys._2)
+  // }
 
   /**
     * 
@@ -71,7 +68,7 @@ object DlmGp {
     p:   Parameters,
     xs:  Vector[Location[Double]]) = {
 
-    val x0 = MultivariateGaussian(p.m0, p.c0).draw
+    val x0 = MultivariateGaussian(p.dlm.m0, p.dlm.c0).draw
     val init = (Data(0.0, xs, DenseVector.zeros[Double](xs.size)), x0)
 
     MarkovChain(init){ case (d, theta) => simStep(mod, p, xs)(d.time + 1.0, theta) }

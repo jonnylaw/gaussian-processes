@@ -14,8 +14,8 @@ object KernelFunction {
   }
 
   /**
-    * The Matern covariance function 
-    * @param nu 
+    * The Matern covariance function
+    * @param nu
     * @param l
     */
   def matern(
@@ -33,19 +33,20 @@ object KernelFunction {
     * A white noise kernel representing measurement noise
     */
   def white(sigma: Double)(dist: Double): Double = {
-    sigma
+    if (dist == 0) sigma else 0.0
   }
 
   /**
-    * Apply the Kernel function as a sum 
-    * 
-    * TODO: This could have other ways of combining the covariance functions
+    * Apply the Kernel function as a sum
+    *
+    * TODO: Could have other ways of combining the covariance functions
     * (convolution, product etc.)
-    * 
+    *
     * @param ps a list of covariance function parameters
-    * @return a function from distance to the evaluation of a sum covariance function
+    * @return a function from distance to the evaluation
+    * of a sum covariance function
     */
-  def apply(ps: Vector[KernelParameters]): Double => Double = { x => 
+  def apply(ps: Vector[KernelParameters]): Double => Double = { x =>
     ps.map(p => p match {
       case SquaredExp(h, s) => squaredExponential(h, s)(x)
       case Matern(s, nu, l) => matern(s, nu, l)(x)
@@ -83,8 +84,8 @@ object KernelFunction {
   def buildCov(
     xs:    Vector[Location[Double]],
     covFn: Double => Double,
-    dist:  (Location[Double], Location[Double]) => Double
-  ) = {
+    dist:  (Location[Double], Location[Double]) => Double) = {
+
     distanceMatrix(xs, dist).map(covFn)
   }
 
@@ -100,7 +101,7 @@ object KernelFunction {
     val n = newXs.size
     val m = xs.size
     val mat = DenseMatrix.zeros[Double](n, m)
-    
+
     for {
       i <- 1 until n
       j <- 1 until m

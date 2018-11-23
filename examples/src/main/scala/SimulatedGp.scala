@@ -27,25 +27,12 @@ trait TestModel {
   }
 
   val params = GaussianProcess.Parameters(
-    // MeanParameters.plane(DenseVector(-2.0, 0.5)),
     MeanParameters.zero,
     Vector(KernelParameters.se(3.0, 5.5), KernelParameters.white(0.5))
   )
 
   val covFn = KernelFunction.apply(params.kernelParameters)
   val dist = Location.euclidean _
-
-  val prior = for {
-    v <- InverseGamma(3.0, 0.5)
-    h <- InverseGamma(3.0, 4.0)
-    sigma <- Rand.always(2.0) // InverseGamma(0.001, 0.001)
-    // alpha <- Gaussian(0.0, 5.0)
-    // beta <- Gaussian(0.0, 5.0)
-  } yield GaussianProcess.Parameters(
-    // MeanParameters.plane(DenseVector(alpha, beta)),
-    MeanParameters.zero,
-    Vector(KernelParameters.se(h, sigma), KernelParameters.white(v))
-  )
 }
 
 object SimulateGp extends App with TestModel {
@@ -71,7 +58,15 @@ object SimulateGpReplicate extends App with TestModel {
   out.writeCsv(res, rfc.withHeader("replicate", "x", "y"))
 }
 
-object FitGp extends App with TestModel {
+object FitGp extends App  {
+  val params = GaussianProcess.Parameters(
+    MeanParameters.zero,
+    Vector(KernelParameters.se(1.0, 0.5), KernelParameters.white(0.001))
+  )
+
+  val covFn = KernelFunction.apply(params.kernelParameters)
+  val dist = Location.euclidean _
+
   // read in data
   val rawData = Paths.get("data/simulated_gp.csv")
   val reader = rawData.asCsvReader[List[Double]](rfc.withHeader)
@@ -81,8 +76,10 @@ object FitGp extends App with TestModel {
     }.
     toVector.
     zipWithIndex.
-    filter { case (_, i) => i % 15 == 0 }.
+    filter { case (_, i) => (i + 1) % 15 == 0 }.
     map(_._1)
+
+  data foreach println
 
   // create a regular grid of points to draw from the GP posterior
   implicit val integralD = scala.math.Numeric.DoubleAsIfIntegral
@@ -113,7 +110,7 @@ object ParametersSimulatedGp extends App with TestModel {
     }.
     toVector.
     zipWithIndex.
-    filter { case (_, i) => i % 15 == 0 }.
+    filter { case (_, i) => (i + 1) % 15 == 0 }.
     map(_._1)
 
   def proposal(delta: Double)(ps: Vector[KernelParameters]) = ps traverse {
@@ -132,12 +129,25 @@ object ParametersSimulatedGp extends App with TestModel {
         } yield KernelParameters.white(news)
     }}
 
+  val priorSigmaY = InverseGamma(10, 6)
+  val priorSigma = InverseGamma(3, 6)
+  val priorh = InverseGamma(3.0, 4.0)
+
+  val prior = for {
+    v <- priorSigmaY
+    h <- priorh
+    sigma <- priorSigma
+  } yield GaussianProcess.Parameters(
+    MeanParameters.zero,
+    Vector(KernelParameters.se(h, sigma), KernelParameters.white(v))
+  )
+
   def priorKernel(ps: Vector[KernelParameters]) = ps.map(p => p match {
     case SquaredExp(h, sigma) =>
-      InverseGamma(3, 6).logPdf(h) +
-      InverseGamma(3, 6).logPdf(sigma)
+      priorh.logPdf(h) +
+        priorSigma.logPdf(sigma)
     case White(s) =>
-      InverseGamma(10, 6).logPdf(s)
+      priorSigmaY.logPdf(s)
   }).sum
 
   // get iterations from command line argument
@@ -164,7 +174,7 @@ object PosteriorPredictive extends App with TestModel {
     }.
     toVector.
     zipWithIndex.
-    filter { case (_, i) => i % 15 == 0 }.
+    filter { case (_, i) => (i + 1) % 15 == 0 }.
     map(_._1)
 
   val rawChain = Paths.get("data/gpmcmc_0.csv")
@@ -206,3 +216,4 @@ object PosteriorPredictive extends App with TestModel {
   val out = new java.io.File("data/posterior_predictive.csv")
   out.writeCsv(res, rfc.withHeader("replicate", "x", "mean", "h", "sigma", "sigma_y"))
 }
+

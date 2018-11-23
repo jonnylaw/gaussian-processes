@@ -11,9 +11,10 @@ object Predict {
     * Helper function for fit chol
     * @param newx a new location
     * @param xs locations with measurements
-    * @param mod a Gaussian process model
-    * @return a vector containing the distance from each existing location to 
-    * the new location
+    * @param covFn a covariance function from Double => Double
+    * @param dist a distance function from a pair of locations to double
+    * @return a vector containing the value of the covariance function
+    * given the distance from each existing location to the new location
     */
   def buildDistVec(
     newx:  Location[Double],
@@ -69,26 +70,30 @@ object Predict {
     for {
       xs <- newXs
 
-      // calculate covariances,
+      // calculate covariances, between the new points and existing
       kxy = buildDistVec(xs, x, covFn, dist)
-      kyy = covFn(dist(xs, xs))
 
-      // take the difference between observed and mean
-      meanFn = MeanFunction.apply(p.meanParameters)
-      ys = DenseVector(observed.map(_.y).toArray) - DenseVector(x.map(meanFn).toArray)
+      // between the point and itself
+      kyy = covFn(dist(xs, xs)) //
+
+      ys = DenseVector(observed.map(_.y).toArray)
 
       // calculate the mean and covariance
+      // alpha = l.t \ (l \ ys)
+      // v = l \ kxy
+      // mean = kxy.t * alpha
+      // cov = kyy - v.t * v
+
       u = forwardSolve(l, kxy)
       v = forwardSolve(l, ys)
-      mean = meanFn(xs) + u.t * v
+      mean = u.t * v
       cov = kyy - u.t * u
     } yield (xs, Gaussian(mean, math.sqrt(cov)))
   }
 
   def predict(
     fitted:   Vector[Gaussian],
-    interval: Double
-  ) = {
+    interval: Double) = {
 
     fitted.map(f =>
       (f.mean, Summarise.getInterval(f.mean, f.variance, 1 - interval),

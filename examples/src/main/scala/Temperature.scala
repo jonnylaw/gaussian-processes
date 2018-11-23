@@ -150,6 +150,7 @@ object PredictTemperature extends App with TemperatureModel {
     toVector
 
   // perform prediction at test location for each day
+  // TODO: Remove test locations
   val predictions = data.
     groupBy(_.date).
     map { case (d, ts) =>

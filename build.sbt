@@ -1,5 +1,5 @@
 lazy val commonSettings = Seq(
-  scalaVersion := "2.12.6",
+  scalaVersion := "2.12.4",
   name := "gaussian-processes",
   organization := "com.github.jonnylaw",
   version := "0.1.0",
@@ -38,6 +38,7 @@ lazy val commonSettings = Seq(
 )
 
 // scalafmtOnCompile in ThisBuild := true
+ensimeScalaVersion in ThisBuild := "2.12.4"
 
 lazy val core = (project in file("core"))
   .settings(
@@ -58,7 +59,7 @@ lazy val examples = project
     libraryDependencies ++= Seq(
       "com.nrinaudo"         %% "kantan.csv"          % "0.4.0",
       "com.nrinaudo"         %% "kantan.csv-generic"  % "0.4.0",
-      "com.github.jonnylaw"  %% "bayesian_dlms"       % "0.4.0",
+      "com.github.jonnylaw"  %% "bayesian_dlms"       % "0.4.1",
       "com.cibo"             %% "evilplot"            % "0.3.2"
     )
   )

@@ -88,7 +88,6 @@ object FitDlmGp {
           reduce((a, b) => DenseMatrix.horzcat(a, b))
       }.
       getOrElse((time: Double) => mod.dlm.f(time))
-
     mod.dlm.copy(f = newf)
   }
 

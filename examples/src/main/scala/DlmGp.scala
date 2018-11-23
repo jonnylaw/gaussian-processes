@@ -7,6 +7,7 @@ import breeze.stats.distributions._
 import cats.implicits._
 
 object DlmGp {
+
   /**
     * A model from the DLM GP
     * @param dim the dimension of the DLM GP, if this is omitted a composed DLM
@@ -64,15 +65,14 @@ object DlmGp {
   /**
     *
     */
-  def simulate(
-    mod: Model,
-    p:   Parameters,
-    xs:  Vector[Location[Double]]) = {
+  def simulate(mod: Model, p: Parameters, xs: Vector[Location[Double]]) = {
 
     val x0 = MultivariateGaussian(p.dlm.m0, p.dlm.c0).draw
     val init = (DlmGpData(0.0, xs, DenseVector.zeros[Double](xs.size)), x0)
 
-    MarkovChain(init){ case (d, theta) => simStep(mod, p, xs)(d.time + 1.0, theta) }
+    MarkovChain(init) {
+      case (d, theta) => simStep(mod, p, xs)(d.time + 1.0, theta)
+    }
   }
 
   case class State(

@@ -98,10 +98,9 @@ object Hmc {
     gradient: DenseVector[Double] => DenseVector[Double],
     l: Int)(
     theta: DenseVector[Double],
-    phi: DenseVector[Double]): (DenseVector[Double], DenseVector[Double]) =
+    phi: DenseVector[Double]): (DenseVector[Double], DenseVector[Double]) = 
     (1 to l).foldLeft((theta, phi)){ case ((t, p), _) =>
       leapfrog(eps, gradient)(t, p)
-    }
 
   /**
     * Calculate the log-acceptance rate
@@ -132,22 +131,18 @@ object Hmc {
     }
   }
 
-  /**
-    * Perform a logistic transformation
-    */
   def logistic(x: Double): Double =
     1.0 / (1.0 + exp(-x))
 
-  def logit(p: Double): Double =
+  def logit(p: Double): Double = 
     log(p / (1 - p))
 
   def softplus(x: Double): Double =
     log1p(exp(x))
 
+
   /**
     * Parameter in an HMC algorithm
-    * @param unconstrained the unconstrained value of the
-    * @param constrained the parameter 
     */
   case class Parameter(
     unconstrained: Double,

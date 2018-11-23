@@ -68,7 +68,7 @@ object FitGp extends App  {
   val dist = Location.euclidean _
 
   // read in data
-  val rawData = Paths.get("data/simulated_gp.csv")
+  val rawData = Paths.get("examples/data/simulated_gp.csv")
   val reader = rawData.asCsvReader[List[Double]](rfc.withHeader)
   val data = reader.
     collect {
@@ -92,7 +92,7 @@ object FitGp extends App  {
       diag(DenseVector(fitted.map(_._2.variance).toArray)), 0.975)).
     map { case ((a, b), (c, d)) => (a, b, c, d) }
 
-  val outFile = new java.io.File("data/fitted_gp.csv")
+  val outFile = new java.io.File("examples/data/fitted_gp.csv")
   outFile.writeCsv(out, rfc.withHeader("x", "mean", "upper", "lower"))
 }
 
@@ -100,7 +100,7 @@ object ParametersSimulatedGp extends App with TestModel {
   implicit val system = ActorSystem("fit_simulated_gp")
   implicit val materializer = ActorMaterializer()
 
-  val rawData = Paths.get("data/simulated_gp.csv")
+  val rawData = Paths.get("examples/data/simulated_gp.csv")
   val reader = rawData.asCsvReader[List[Double]](rfc.withHeader)
   val data = reader.
     collect {
@@ -125,7 +125,8 @@ object ParametersSimulatedGp extends App with TestModel {
           z <- Gaussian(0.0, delta)
           news = s * math.exp(z)
         } yield KernelParameters.white(news)
-    }}
+    }
+  }
 
   val priorSigmaY = InverseGamma(10, 6)
   val priorSigma = InverseGamma(3, 6)
@@ -156,6 +157,7 @@ object ParametersSimulatedGp extends App with TestModel {
 
   def format(p: GaussianProcess.Parameters): List[Double] =
     p.kernelParameters.flatMap(_.toList).toList ::: p.meanParameters.toList
+
 
   // write iters to file
   Streaming.

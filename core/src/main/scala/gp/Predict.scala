@@ -7,6 +7,7 @@ import GaussianProcess._
 import com.github.fommil.netlib.BLAS.{getInstance => blas}
 
 object Predict {
+
   /**
     * Helper function for fit chol
     * @param newx a new location
@@ -15,12 +16,14 @@ object Predict {
     * @param dist a distance function from a pair of locations to double
     * @return a vector containing the value of the covariance function
     * given the distance from each existing location to the new location
+    * @return a vector containing the distance from each existing location to
+    * the new location
     */
   def buildDistVec(
-    newx:  Location[Double],
-    xs:    Vector[Location[Double]],
-    covFn: Double => Double,
-    dist:  (Location[Double], Location[Double]) => Double
+      newx: Location[Double],
+      xs: Vector[Location[Double]],
+      covFn: Double => Double,
+      dist: (Location[Double], Location[Double]) => Double
   ): DenseVector[Double] = {
 
     DenseVector(xs.map(d => covFn(dist(d, newx))).toArray)
@@ -35,9 +38,8 @@ object Predict {
     *
     * @return The solution, x, of the linear system A x = y
     */
-  def forwardSolve(
-    A: DenseMatrix[Double],
-    y: DenseVector[Double]): DenseVector[Double] = {
+  def forwardSolve(A: DenseMatrix[Double],
+                   y: DenseVector[Double]): DenseVector[Double] = {
     val yc = y.copy
     blas.dtrsv("L", "N", "N", A.cols, A.toArray, A.rows, yc.data, 1)
     yc
@@ -95,14 +97,15 @@ object Predict {
     fitted:   Vector[Gaussian],
     interval: Double) = {
 
-    fitted.map(f =>
-      (f.mean, Summarise.getInterval(f.mean, f.variance, 1 - interval),
-        Summarise.getInterval(f.mean, f.variance, interval)))
+    fitted.map(
+      f =>
+        (f.mean,
+         Summarise.getInterval(f.mean, f.variance, 1 - interval),
+         Summarise.getInterval(f.mean, f.variance, interval)))
   }
 
-  def buildData(
-    xs: Vector[Location[Double]],
-    ys: Vector[Double]): Vector[Data] = {
+  def buildData(xs: Vector[Location[Double]],
+                ys: Vector[Double]): Vector[Data] = {
 
     (xs zip ys) map { case (x, y) => Data(x, y) }
   }

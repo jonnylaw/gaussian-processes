@@ -1,24 +1,28 @@
 package gp.core
 
 import breeze.stats.distributions._
-import breeze.linalg.{DenseVector, DenseMatrix, cholesky, diag, sum}
+import breeze.linalg.{DenseVector, DenseMatrix, cholesky, sum, diag}
 import breeze.numerics.log
 import cats.implicits._
 
 object GaussianProcess {
+
   /**
     * Parameters of a Gaussian Process model
     * @param sigma the noise standard deviation of observations of the process
     * @param kernelParameters the parameters of the covariance function
     */
   case class Parameters(
-    meanParameters:   MeanParameters,
-    kernelParameters: Vector[KernelParameters]
+      meanParameters: MeanParameters,
+      kernelParameters: Vector[KernelParameters]
   ) {
 
     def map(f: Double => Double): Parameters = {
       Parameters(meanParameters map f, kernelParameters.map(_.map(f)))
     }
+
+    def toList: List[Double] =
+      meanParameters.toList ++ kernelParameters.toList.flatMap(_.toList)
   }
 
   /**
@@ -40,9 +44,8 @@ object GaussianProcess {
     * @return a symmetrix matrix containing the pairwise distances between all
     * locations in xs
     */
-  def distanceMatrix(
-    xs: Vector[Location[Double]],
-    dist: (Location[Double], Location[Double]) => Double) = {
+  def distanceMatrix(xs: Vector[Location[Double]],
+                     dist: (Location[Double], Location[Double]) => Double) = {
 
     val n = xs.length
 
@@ -58,35 +61,35 @@ object GaussianProcess {
     * Given a covariance and mean function make
     * a draw from the Gaussian Process prior at specified locations
     */
-  def draw(
-    xs: Vector[Location[Double]],
-    dist: (Location[Double], Location[Double]) => Double,
-    p:  Parameters) = {
+  def draw(xs: Vector[Location[Double]],
+           dist: (Location[Double], Location[Double]) => Double,
+           p: Parameters) = {
 
     val nugget = diag(DenseVector.fill(xs.size)(1e-3))
-    val covariance = KernelFunction.buildCov(xs,
-      KernelFunction.apply(p.kernelParameters), dist) + nugget
+    val covariance = KernelFunction.buildCov(
+      xs,
+      KernelFunction.apply(p.kernelParameters),
+      dist) + nugget
 
     val mean = DenseVector(xs.map(MeanFunction.apply(p.meanParameters)).toArray)
 
     MultivariateGaussian(mean, covariance)
   }
 
-  def vecToData(
-    vec: DenseVector[Double],
-    xs:  Vector[Location[Double]]) = {
+  def vecToData(vec: DenseVector[Double], xs: Vector[Location[Double]]) = {
     (vec.data.toVector zip xs) map { case (f, x) => Data(x, f) }
   }
 
-
   def drawData(
-    xs: Vector[Location[Double]],
-    dist: (Location[Double], Location[Double]) => Double,
-    p:  Parameters
+      xs: Vector[Location[Double]],
+      dist: (Location[Double], Location[Double]) => Double,
+      p: Parameters
   ) = {
 
-    val covariance = KernelFunction.buildCov(xs,
-      KernelFunction.apply(p.kernelParameters), dist)
+    val covariance = KernelFunction.buildCov(
+      xs,
+      KernelFunction.apply(p.kernelParameters),
+      dist)
     val mean = DenseVector(xs.map(MeanFunction.apply(p.meanParameters)).toArray)
 
     for {
@@ -98,14 +101,33 @@ object GaussianProcess {
     * Calculate the marginal log-likelihood of a single observation
     * of a Gaussian process
     */
-  def loglikelihood(
+  def loglikelihood(observed: Vector[Data],
+                    dist: (Location[Double], Location[Double]) => Double) = {
+    p: Parameters =>
+      val covFn = KernelFunction(p.kernelParameters)
+      val xs = observed.map(_.x)
+      val n = xs.size
+
+      // covariance of observed
+      val nugget = diag(DenseVector.fill(xs.size)(1e-3))
+      val kxx = KernelFunction.buildCov(xs, covFn, dist) + nugget
+
+      val meanFn = MeanFunction.apply(p.meanParameters)
+      val ys = DenseVector(observed.map(_.y).toArray) - DenseVector(
+        xs.map(meanFn).toArray)
+      val l = cholesky(kxx)
+      val u = Predict.forwardSolve(l, ys)
+
+      -0.5 * u dot u - sum(log(diag(l))) - n * 0.5 * log(2 * math.Pi)
+  }
+
+  def naiveLogLikelihood(
     observed: Vector[Data],
     dist:     (Location[Double], Location[Double]) => Double)
     (p: Parameters) = {
 
     val covFn = KernelFunction(p.kernelParameters)
     val xs = observed.map(_.x)
-    val n = xs.size
 
     // covariance of observed
     val nugget = diag(DenseVector.fill(xs.size)(1e-3))
@@ -113,9 +135,9 @@ object GaussianProcess {
 
     // take the mean away from the observed data
     val meanFn = MeanFunction.apply(p.meanParameters)
-    val ys = DenseVector(observed.map(_.y).toArray) - DenseVector(xs.map(meanFn).toArray)
-    val l = cholesky(kxx)
-    val u = Predict.forwardSolve(l, ys)
+    val mean = DenseVector(xs.map(meanFn).toArray)
+
+    val ys = DenseVector(observed.map(_.y).toArray)
 
     - 0.5 * u dot u - sum(log(diag(l))) - n * 0.5 * log(2 * math.Pi)
   }
@@ -138,10 +160,10 @@ object GaussianProcess {
     * @param ys a vector of noisy observations of y = f(x) + eps
     */
   def efficientDraw(
-    xs:          Vector[Location[Double]],
-    ys:          Vector[Data],
-    dist:        (Location[Double], Location[Double]) => Double,
-    p:           Parameters,
+      xs: Vector[Location[Double]],
+      ys: Vector[Data],
+      dist: (Location[Double], Location[Double]) => Double,
+      p: Parameters,
   )(priorSample: Rand[DenseVector[Double]]) = {
 
     val covFn = KernelFunction.apply(p.kernelParameters)

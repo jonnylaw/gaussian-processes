@@ -37,7 +37,6 @@ lazy val commonSettings = Seq(
   }
 )
 
-// scalafmtOnCompile in ThisBuild := true
 ensimeScalaVersion in ThisBuild := "2.12.4"
 
 lazy val core = (project in file("core"))
@@ -48,7 +47,9 @@ lazy val core = (project in file("core"))
       "com.github.fommil.netlib" % "all"                  % "1.1.2",
       "com.github.nscala-time"   %% "nscala-time"         % "2.18.0",
       "org.typelevel"            %% "cats-core"           % "1.0.1",
-      "org.scalatest"            %% "scalatest"           % "3.0.5" % "test"
+      "com.stripe"               %% "rainier-core"        % "0.1.3",
+      "org.scalatest"            %% "scalatest"           % "3.0.5"  % "test",
+      "org.scalacheck"           %% "scalacheck"          % "1.13.4" % "test"
     ),
   )
   // .enablePlugins(TutPlugin) // for documentation

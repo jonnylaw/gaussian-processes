@@ -19,7 +19,7 @@ case class Plane(beta: DenseVector[Double]) extends MeanParameters {
 
   def add(that: MeanParameters) = that match {
     case Plane(beta1) => MeanParameters.plane(beta + beta1)
-    case _ => throw new Exception("Can't add different shaped parameters")
+    case _            => throw new Exception("Can't add different shaped parameters")
   }
 
   def toList = beta.data.toList
@@ -31,7 +31,7 @@ case object Zero extends MeanParameters {
 
   def add(that: MeanParameters) = that match {
     case Zero => MeanParameters.zero
-    case _ => throw new Exception("Can't add different shaped parameters")
+    case _    => throw new Exception("Can't add different shaped parameters")
   }
 
   def toList = Nil
@@ -47,8 +47,7 @@ object MeanParameters {
   /**
     * Make a design matrix from the location vectors
     */
-  def makeDesignMatrix(
-    x: Vector[Location[Double]]): DenseMatrix[Double] = {
+  def makeDesignMatrix(x: Vector[Location[Double]]): DenseMatrix[Double] = {
     val xs: Vector[Vector[Double]] = x.map(_.toVector)
 
     val n = x.size
@@ -79,13 +78,14 @@ object MeanParameters {
     val l = cholesky(kxx)
 
     // calculate the precision and cholesky factor
-    val priorPrec = diag(DenseVector.fill(x.cols)(1.0/prior.variance))
+    val priorPrec = diag(DenseVector.fill(x.cols)(1.0 / prior.variance))
     val prec = x.t * (kxx \ x) + priorPrec
 
     val y = DenseVector(obs.map(_.y).toArray) 
 
     val u: DenseVector[Double] = Predict.forwardSolve(l, y)
-    val mean: DenseVector[Double] = prec \ (priorPrec * DenseVector.fill(x.cols)(prior.mean) + (x.t * u))
+    val mean: DenseVector[Double] = prec \ (priorPrec * DenseVector.fill(
+      x.cols)(prior.mean) + (x.t * u))
 
     val root = cholesky(prec)
     val z = DenseVector.fill(mean.size)(Gaussian(0, 1).draw)
@@ -111,4 +111,12 @@ object MeanParameters {
     case Zero =>
       Rand.always(p)
   }}
+
+  def vectorToParams(p: MeanParameters, pActual: Vector[Double]) =
+    p match {
+      case Plane(beta) =>
+        val n = beta.size
+        plane(DenseVector(pActual.toArray))
+      case Zero => MeanParameters.zero
+    }
 }

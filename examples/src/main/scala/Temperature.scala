@@ -15,7 +15,8 @@ import dlm.core.model._
 trait TemperatureModel {
   implicit val jodaDateTime: CellCodec[DateTime] = {
     val format = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
-    CellCodec.from(s => DecodeResult(format.parseDateTime(s)))(d => format.print(d))
+    CellCodec.from(s => DecodeResult(format.parseDateTime(s)))(d =>
+      format.print(d))
   }
 
   case class Temperature(
@@ -84,32 +85,33 @@ object Temperature extends App with TemperatureModel {
     h <- InverseGamma(3.0, 4.0)
     sigma <- Uniform(0.0001, 0.05)
     beta <- Applicative[Rand].replicateA(3, Gaussian(0.0, 5.0))
-  } yield GaussianProcess.Parameters(
-    MeanParameters.plane(DenseVector(beta.toArray)),
-    Vector(KernelParameters.se(h, sigma), KernelParameters.white(v))
-  )
+  } yield
+    GaussianProcess.Parameters(
+      MeanParameters.plane(DenseVector(beta.toArray)),
+      Vector(KernelParameters.se(h, sigma), KernelParameters.white(v))
+    )
 
   // get iterations from command line argument
   val nIters: Int = args.lift(0).map(_.toInt).getOrElse(100000)
 
-  // val iters = Mcmc.sample(trainingData, priorKernel,
-  //   Gaussian(1.0, 1.0), proposal(0.05), dist, prior.draw).
-  //   steps.
-  //   take(nIters)
+  val iters = Mcmc.sample(trainingData, priorKernel,
+    Gaussian(1.0, 1.0), proposal(0.05), dist, prior.draw).
+    steps.
+    take(nIters)
 
-  // val out = new java.io.File("data/temperature-mcmc.csv")
-  // val writer = out.asCsvWriter[List[Double]](rfc.withHeader("h", "sigma", "sigma_y", "beta_0", "beta_1", "beta_2"))
+  val out = new java.io.File("data/temperature-mcmc.csv")
+  val writer = out.asCsvWriter[List[Double]](rfc.withHeader("h", "sigma", "sigma_y", "beta_0", "beta_1", "beta_2"))
 
-  // def formatParams(p: GaussianProcess.Parameters): List[Double] = {
-  //   p.kernelParameters.flatMap(_.toList).toList ::: p.meanParameters.toList
-  // }
+  def formatParams(p: GaussianProcess.Parameters): List[Double] = {
+    p.kernelParameters.flatMap(_.toList).toList ::: p.meanParameters.toList
+  }
 
-  // // write iters to file
-  // while (iters.hasNext) {
-  //   writer.write(formatParams(iters.next))
-  // }
+  // write iters to file
+  while (iters.hasNext) {
+    writer.write(formatParams(iters.next))
+  }
 
-  // writer.close()
+  writer.close()
 }
 
 object PredictTemperature extends App with TemperatureModel {
@@ -166,4 +168,78 @@ object PredictTemperature extends App with TemperatureModel {
   // write test prediction
   val out = new java.io.File("data/temperature_test_predictions_gp.csv")
   out.writeCsv(predictions, rfc.withHeader("day", "mean", "lower", "object"))
+}
+
+object TemperatureDlmGp extends App with TemperatureModel {
+  def proposal(ps: Vector[KernelParameters]) =
+    ps.traverse(p =>
+      p match {
+        case SquaredExp(h, s) =>
+          for {
+            z1 <- Gaussian(0.0, 0.01)
+            newh = h * math.exp(z1)
+            z2 <- Gaussian(0.0, 0.01)
+            newS = s * math.exp(z2)
+          } yield KernelParameters.se(newh, newS)
+        case White(s) =>
+          for {
+            z <- Gaussian(0.0, 0.01)
+            news = s * math.exp(z)
+          } yield KernelParameters.white(news)
+    })
+
+  def priorKernel(ps: Vector[KernelParameters]) =
+    ps.map(p =>
+        p match {
+          case SquaredExp(h, sigma) =>
+            InverseGamma(3, 5).logPdf(h) +
+              Uniform(0.0001, 0.01).logPdf(sigma)
+          case White(s) =>
+            InverseGamma(3.0, 0.5).logPdf(s)
+      })
+      .sum
+
+  val seasonalDlm = Dlm.seasonal(24, 3)
+  val model = DlmGp.Model(10.some, seasonalDlm, dist)
+
+  val ys = data
+    .groupBy(_.date)
+    .map {
+      case (t, temps) =>
+        DlmGp.Data(t.getMillis,
+                   temps.map(s => Two(s.lon, s.lat)),
+                   DenseVector(temps.map(s => s.obs).toArray))
+    }
+    .toVector
+    .sortBy(_.time)
+
+  val xs = data.map(y => Two(y.lon, y.lat)).distinct
+
+  val prior = for {
+    w <- InverseGamma(3.0, 0.5)
+    m0 <- Gaussian(0.0, 1.0)
+    c0 <- InverseGamma(3.0, 0.5)
+    v <- InverseGamma(3.0, 0.5)
+    h <- InverseGamma(3.0, 4.0)
+    sigma <- InverseGamma(3.0, 0.01)
+  } yield
+    DlmGp.Parameters(
+      w = diag(DenseVector.fill(6)(w)),
+      m0 = DenseVector.fill(6)(m0),
+      c0 = diag(DenseVector.fill(6)(c0)),
+      GaussianProcess.Parameters(
+        MeanParameters.zero,
+        Vector(KernelParameters.se(h, sigma), KernelParameters.white(v))
+      )
+    )
+
+  val iters = FitDlmGp.sample(InverseGamma(3.0, 0.5),
+                              priorKernel,
+                              proposal,
+                              model,
+                              ys,
+                              xs,
+                              prior.draw)
+
+  iters.steps.map(_.p).take(100).foreach(println)
 }

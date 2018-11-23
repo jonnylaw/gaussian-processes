@@ -4,6 +4,9 @@ import breeze.stats.distributions._
 import breeze.linalg.{DenseMatrix, DenseVector}
 
 import GaussianProcess._
+import breeze.linalg.DenseMatrix
+import cats.implicits._
+import math._
 
 sealed trait KernelParameters { self =>
   def map(f: Double => Double): KernelParameters
@@ -104,19 +107,41 @@ object KernelParameters {
 
     def newLl(p: DenseVector[Double]) = {
       val params = vectorToParams(init, p)
-      val const = PernelParameters.
-      ll(params.copy(kernelParameters = kp))
+      ll(params.copy(kernelParameters = kp)) // + add jacobian or constrain parameters
     }
     def newGrad(p: DenseVector[Double]) = {
       val params = vectorToParams(init, p)
-
-      mllGradient(ys, dist)(params.copy(kernelParameters = kp)) + 
+      mllGradient(ys, dist)(params.copy(kernelParameters = kp))
     }
 
     val kp = KernelParameters.unconstrainParams(init.kernelParameters)
     val theta = paramsToDenseVector(init.copy(kernelParameters = kp))
     val initState = HmcState(0, theta, 0)
     MarkovChain(initState)(Hmc(m, l, eps, newGrad, newLl).step)
+  }
+  /**
+    * Sample the observation variance from a Gamma distributoin
+    * Gibbs step using a conditionally-conjugate distribution
+    * @param prior the conditional conjugate prior distribtion for the 
+    * measurement noise variance
+    * @param ys a vector of data points
+    * @param fx the currently sampled value of the function state
+    * @return a distribution over the measurement noise
+    */
+  def samplePrecY(
+    prior: Gamma,
+    ys:    Vector[Data],
+    fx:    Vector[Data]) = {
+
+    val ssy = innerJoin(ys, fx,
+      (a: Data, b: Data) => a.x === b.x).map {
+      case (y, f) => (y.y - f.y) * (y.y - f.y)
+    }.sum
+
+    val shape = prior.shape + ys.size * 0.5
+    val scale = prior.scale + 0.5 * ssy
+
+    Gamma(shape, scale)
   }
 
   /**
@@ -143,7 +168,7 @@ object KernelParameters {
     MarkovChain.Kernels.metropolis(proposal)(ll)
   }
 
-/**
+  /**
     * Transform the parameters to the whole of the real line
     */
   def unconstrainParams(p: Vector[KernelParameters]): Vector[KernelParameters] = p map {
@@ -152,6 +177,9 @@ object KernelParameters {
     case Matern(_, _, _) => throw new Exception("Not implemented yet")
   }
 
+  /**
+    * Restrict the Kernel parameters to an appropriate domain
+    */
   def constrainParams(p: Vector[KernelParameters]): Vector[KernelParameters] = p map {
     case SquaredExp(h, s) => se(exp(h), exp(s))
     case White(s) => white(exp(s))
@@ -161,6 +189,7 @@ object KernelParameters {
   /**
     * Calculate the gradient of the unconstrained Kernel Parameters
     * for a given distance
+    * TODO: Check constrains w.r.t derivatives
     */
   def gradient(p: Vector[KernelParameters])(dist: Double): Vector[Double] = p flatMap {
     case SquaredExp(hu, su) =>
@@ -193,4 +222,26 @@ object KernelParameters {
 
     res.sequence.map (ms => new DenseMatrix(m.rows, m.cols, ms.toArray))
   }
+
+  /**
+    * Transform a DenseVector containing the values of the parameter
+    * into a set of Kernel parameters
+    */
+  def vectorToParams(p: Vector[KernelParameters],
+                     pActual: Vector[Double]): Vector[KernelParameters] = {
+
+    p.foldLeft((Vector[KernelParameters](), pActual)) {
+        case ((acc, pa), ps) =>
+          ps match {
+            case _: SquaredExp =>
+              (acc :+ se(pa.head, pa(1)), pa.drop(2))
+            case _: White =>
+              (acc :+ white(pa.head), pa.tail)
+            case _: Matern =>
+              (acc :+ matern(pa.head, pa(1), pa(2)), pa.drop(3))
+          }
+      }
+      ._1
+  }
 }
+

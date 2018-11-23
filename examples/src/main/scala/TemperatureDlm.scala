@@ -475,7 +475,7 @@ object KrigTemperature extends App with TemperatureDlm {
     toVector
 
   val out = new java.io.File("data/temperature_kriging_dlmgp.csv")
-  val headers = rfc.withHeader(false)
+  val headers = rfc.withHeader("day", "lon", "lat", "mean")
 
   (for {
      // get mean parameters
@@ -483,19 +483,18 @@ object KrigTemperature extends App with TemperatureDlm {
      p = DlmGp.Parameters(dlmP, gpParams)
 
      // perform prediction at test location for each day
-     fitted = DlmGp.forecastLocations(
-       trainingDataDlmGp, trainingLocations, testDataDlmGp,
-                             testLocation, model, seasonalDlm, p).
-     map(a => for {
-           m <- a.mean
-           c <- a.cov
-         } yield Gaussian(m.data.head, c.data.head)).
-     flatten
+     fitted = DlmGp.forecastLocations(trainingDataDlmGp, trainingLocations,
+                             locations, model, seasonalDlm, p).
+     map(_._2)
 
-     predictions = Predict.predict(fitted, 0.75)
+     // predictions = Predict.predict(fitted, 0.75)
 
      // write out predictions
-     io = out.writeCsv(times zip fitted.map(_.mean), headers)
+     locsPred: Vector[(DateTime, Double, Double, Double)] = (locations zip fitted).
+       zipWithIndex.
+       flatMap { case ((Two(x, y), f), i) => f.data.toVector.map(fi => (times(i), x, y, fi)) }
+
+     io = out.writeCsv(locsPred, headers)
    } yield io).
     onComplete{
       s => println(s)

@@ -79,8 +79,6 @@ object FitGp extends App  {
     filter { case (_, i) => (i + 1) % 15 == 0 }.
     map(_._1)
 
-  data foreach println
-
   // create a regular grid of points to draw from the GP posterior
   implicit val integralD = scala.math.Numeric.DoubleAsIfIntegral
   val testPoints = Vector.range(-10.0, 10.0, 0.01).map(One(_))

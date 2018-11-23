@@ -156,4 +156,27 @@ object GaussianProcess {
       yvec = DenseVector(ys.map(_.y).toArray)
     } yield x + (kyy \ kxy) * (y - yvec)
   }
+
+  def mllGradient(
+    observed: Vector[Data],
+    dist: (Location[Double], Location[Double]) => Double
+  )(p: Parameters): DenseVector[Double] = {
+
+    val covFn = KernelFunction(p.kernelParameters)
+    val xs = observed.map(_.x)
+
+    // covariance of observed
+    val nugget = diag(DenseVector.fill(xs.size)(1e-3))
+    val kxx = KernelFunction.buildCov(xs, covFn, dist) + nugget
+
+    val meanFn = MeanFunction.apply(p.meanParameters)
+    val ys = DenseVector(observed.map(_.y).toArray) - DenseVector(
+      xs.map(meanFn).toArray)
+
+    val grad = KernelParameters.tangentMatrix(observed, dist, p.kernelParameters)
+
+    val alpha = kxx \ ys
+
+    DenseVector(grad.map { g => 0.5 * sum(diag(alpha * alpha.t * g - kxx \ g)) }.toArray)
+  }
 }

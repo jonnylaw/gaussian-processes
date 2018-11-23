@@ -68,7 +68,6 @@ trait TemperatureDlm {
     zipWithIndex.
     map { case (d, i) => d.copy(time = i.toDouble) }
 
-
   implicit val randMonad = new Monad[Rand] {
     def pure[A](x: A): Rand[A] = Rand.always(x)
     def flatMap[A, B](fa: Rand[A])(f: A => Rand[B]): Rand[B] =
@@ -86,31 +85,6 @@ trait TemperatureDlm {
     copy(f = (t: Double) => List.fill(8)(seasonalDlm.f(t)).
            reduce((a, b) => DenseMatrix.horzcat(a, b)))
   val model = DlmGp.Model(None, mvDlmShareState, dist)
-
-  val paramsFile = Paths.get("data/temperature_gp_residuals_0.csv")
-  val paramsReader = paramsFile.asCsvReader[List[Double]](rfc.withHeader)
-  val chain = paramsReader.
-    collect {
-      case Right(a) => GaussianProcess.Parameters(
-        MeanParameters.zero,
-        Vector(KernelParameters.se(a(0), a(1)), KernelParameters.white(a(2)))
-      )
-    }.
-    drop(1000).
-    toStream.
-    zipWithIndex.
-    filter { case (_, i) => i % 20 == 0 }.
-    map(_._1)
-
-  // calculate mean of gpParameters parameters
-  val gpParams: GaussianProcess.Parameters = chain.
-    reduce { (a, b) =>
-      GaussianProcess.Parameters(
-        a.meanParameters add b.meanParameters,
-        (a.kernelParameters zip b.kernelParameters).
-          map { case (x, y) => x add y })
-    }.
-    map(p => p / chain.size)
 
   val file = s"data/temperature_dlm_share_state_0.csv"
 
@@ -418,6 +392,31 @@ object ForecastTestDlm extends App with TemperatureDlm {
   val out = new java.io.File("data/temperature_test_predictions_dlmgp.csv")
   val headers = rfc.withHeader("day", "mean", "lower", "upper")
 
+  val paramsFile = Paths.get("data/temperature_gp_residuals_0.csv")
+  val paramsReader = paramsFile.asCsvReader[List[Double]](rfc.withHeader)
+  val chain = paramsReader.
+    collect {
+      case Right(a) => GaussianProcess.Parameters(
+        MeanParameters.zero,
+        Vector(KernelParameters.se(a(0), a(1)), KernelParameters.white(a(2)))
+      )
+    }.
+    drop(1000).
+    toStream.
+    zipWithIndex.
+    filter { case (_, i) => i % 20 == 0 }.
+    map(_._1)
+
+  // calculate mean of gpParameters parameters
+  val gpParams: GaussianProcess.Parameters = chain.
+    reduce { (a, b) =>
+      GaussianProcess.Parameters(
+        a.meanParameters add b.meanParameters,
+        (a.kernelParameters zip b.kernelParameters).
+          map { case (x, y) => x add y })
+    }.
+    map(p => p / chain.size)
+
   (for {
      // get mean parameters
      dlmP <- dlmPs.runWith(Sink.head)
@@ -466,8 +465,6 @@ object KrigTemperature extends App with TemperatureDlm {
 
   val locations = DlmGp.getGridLocations(lons, lats, 0.005)
 
-  locations foreach println
-
   val trainingDataDlmGp: Vector[Data] = trainingData.
     groupBy(_.date).
     map { case (date, ts) =>
@@ -476,6 +473,31 @@ object KrigTemperature extends App with TemperatureDlm {
 
   val out = new java.io.File("data/temperature_kriging_dlmgp.csv")
   val headers = rfc.withHeader("day", "lon", "lat", "mean")
+
+  val paramsFile = Paths.get("data/temperature_gp_residuals_0.csv")
+  val paramsReader = paramsFile.asCsvReader[List[Double]](rfc.withHeader)
+  val chain = paramsReader.
+    collect {
+      case Right(a) => GaussianProcess.Parameters(
+        MeanParameters.zero,
+        Vector(KernelParameters.se(a(0), a(1)), KernelParameters.white(a(2)))
+      )
+    }.
+    drop(1000).
+    toStream.
+    zipWithIndex.
+    filter { case (_, i) => i % 20 == 0 }.
+    map(_._1)
+
+  // calculate mean of gpParameters parameters
+  val gpParams: GaussianProcess.Parameters = chain.
+    reduce { (a, b) =>
+      GaussianProcess.Parameters(
+        a.meanParameters add b.meanParameters,
+        (a.kernelParameters zip b.kernelParameters).
+          map { case (x, y) => x add y })
+    }.
+    map(p => p / chain.size)
 
   (for {
      // get mean parameters

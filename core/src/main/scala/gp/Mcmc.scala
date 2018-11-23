@@ -3,10 +3,7 @@ package gp.core
 import GaussianProcess._
 import breeze.stats.distributions._
 import breeze.linalg.{DenseVector, DenseMatrix}
-<<<<<<< HEAD
 import cats.implicits._
-=======
->>>>>>> hmc
 import com.github.fommil.netlib.BLAS.{getInstance => blas}
 import cats.data.Kleisli
 

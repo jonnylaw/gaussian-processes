@@ -121,27 +121,6 @@ object GaussianProcess {
       -0.5 * u dot u - sum(log(diag(l))) - n * 0.5 * log(2 * math.Pi)
   }
 
-  def naiveLogLikelihood(
-    observed: Vector[Data],
-    dist:     (Location[Double], Location[Double]) => Double)
-    (p: Parameters) = {
-
-    val covFn = KernelFunction(p.kernelParameters)
-    val xs = observed.map(_.x)
-
-    // covariance of observed
-    val nugget = diag(DenseVector.fill(xs.size)(1e-3))
-    val kxx = KernelFunction.buildCov(xs, covFn, dist) + nugget
-
-    // take the mean away from the observed data
-    val meanFn = MeanFunction.apply(p.meanParameters)
-    val mean = DenseVector(xs.map(meanFn).toArray)
-
-    val ys = DenseVector(observed.map(_.y).toArray)
-
-    - 0.5 * u dot u - sum(log(diag(l))) - n * 0.5 * log(2 * math.Pi)
-  }
-
   /**
     * Take a random sampling of locations between two points in one-dimension
     */

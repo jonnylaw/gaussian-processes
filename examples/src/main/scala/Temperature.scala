@@ -41,6 +41,11 @@ trait TemperatureModel {
     }.
     toVector
 
+  val test_sensor = "new_new_emote_2604"
+
+  val testData = data.
+    filter(_.name == test_sensor)
+
   implicit val randMonad = new Monad[Rand] {
     def pure[A](x: A): Rand[A] = Rand.always(x)
     def flatMap[A, B](fa: Rand[A])(f: A => Rand[B]): Rand[B] =
@@ -90,6 +95,11 @@ object Temperature extends App with TemperatureModel {
       MeanParameters.plane(DenseVector(beta.toArray)),
       Vector(KernelParameters.se(h, sigma), KernelParameters.white(v))
     )
+
+  val trainingData = data.
+    filter(_.name != test_sensor).
+    map(t => t.obs map (y => GaussianProcess.Data(Two(t.lon, t.lat), y))).
+    flatten
 
   // get iterations from command line argument
   val nIters: Int = args.lift(0).map(_.toInt).getOrElse(100000)
@@ -168,78 +178,4 @@ object PredictTemperature extends App with TemperatureModel {
   // write test prediction
   val out = new java.io.File("data/temperature_test_predictions_gp.csv")
   out.writeCsv(predictions, rfc.withHeader("day", "mean", "lower", "object"))
-}
-
-object TemperatureDlmGp extends App with TemperatureModel {
-  def proposal(ps: Vector[KernelParameters]) =
-    ps.traverse(p =>
-      p match {
-        case SquaredExp(h, s) =>
-          for {
-            z1 <- Gaussian(0.0, 0.01)
-            newh = h * math.exp(z1)
-            z2 <- Gaussian(0.0, 0.01)
-            newS = s * math.exp(z2)
-          } yield KernelParameters.se(newh, newS)
-        case White(s) =>
-          for {
-            z <- Gaussian(0.0, 0.01)
-            news = s * math.exp(z)
-          } yield KernelParameters.white(news)
-    })
-
-  def priorKernel(ps: Vector[KernelParameters]) =
-    ps.map(p =>
-        p match {
-          case SquaredExp(h, sigma) =>
-            InverseGamma(3, 5).logPdf(h) +
-              Uniform(0.0001, 0.01).logPdf(sigma)
-          case White(s) =>
-            InverseGamma(3.0, 0.5).logPdf(s)
-      })
-      .sum
-
-  val seasonalDlm = Dlm.seasonal(24, 3)
-  val model = DlmGp.Model(10.some, seasonalDlm, dist)
-
-  val ys = data
-    .groupBy(_.date)
-    .map {
-      case (t, temps) =>
-        DlmGp.Data(t.getMillis,
-                   temps.map(s => Two(s.lon, s.lat)),
-                   DenseVector(temps.map(s => s.obs).toArray))
-    }
-    .toVector
-    .sortBy(_.time)
-
-  val xs = data.map(y => Two(y.lon, y.lat)).distinct
-
-  val prior = for {
-    w <- InverseGamma(3.0, 0.5)
-    m0 <- Gaussian(0.0, 1.0)
-    c0 <- InverseGamma(3.0, 0.5)
-    v <- InverseGamma(3.0, 0.5)
-    h <- InverseGamma(3.0, 4.0)
-    sigma <- InverseGamma(3.0, 0.01)
-  } yield
-    DlmGp.Parameters(
-      w = diag(DenseVector.fill(6)(w)),
-      m0 = DenseVector.fill(6)(m0),
-      c0 = diag(DenseVector.fill(6)(c0)),
-      GaussianProcess.Parameters(
-        MeanParameters.zero,
-        Vector(KernelParameters.se(h, sigma), KernelParameters.white(v))
-      )
-    )
-
-  val iters = FitDlmGp.sample(InverseGamma(3.0, 0.5),
-                              priorKernel,
-                              proposal,
-                              model,
-                              ys,
-                              xs,
-                              prior.draw)
-
-  iters.steps.map(_.p).take(100).foreach(println)
 }

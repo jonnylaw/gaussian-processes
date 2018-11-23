@@ -75,24 +75,6 @@ object KernelParameters {
   }
 
   /**
-    * Transform parameters to a dense vector
-    */
-  def paramsToDenseVector(p: Parameters) =
-    DenseVector(p.toList.toArray)
-
-  /**
-    * Transform a dense vector to parameters
-    */
-  def vectorToParams(p: Parameters, pActual: DenseVector[Double]) = {
-    val n = p.meanParameters.toList.size
-    val ps = pActual.data.toVector
-    Parameters(
-      MeanParameters.vectorToParams(p.meanParameters, ps.take(n)),
-      KernelParameters.vectorToParams(p.kernelParameters, ps.drop(n))
-    )
-  }
-
-  /**
     * Sample GP parameters using HMC
     * @param ys a vector of observations of a GP
     */
@@ -106,23 +88,26 @@ object KernelParameters {
     eps:  Double) = {
 
     def newLl(p: DenseVector[Double]) = {
-      val params = vectorToParams(init, p)
-      ll(params.copy(kernelParameters = kp)) // + add jacobian or constrain parameters
+      val params = Hmc.vectorToParams(init, p)
+      val kp = KernelParameters.constrainParams(params.kernelParameters)
+      ll(params.copy(kernelParameters = kp))
     }
     def newGrad(p: DenseVector[Double]) = {
-      val params = vectorToParams(init, p)
-      mllGradient(ys, dist)(params.copy(kernelParameters = kp))
+      val params = Hmc.vectorToParams(init, p)
+      mllGradient(ys, dist)(params)
     }
 
+    // unconstrain the parameters to they are on the whole real line
     val kp = KernelParameters.unconstrainParams(init.kernelParameters)
-    val theta = paramsToDenseVector(init.copy(kernelParameters = kp))
+    val theta = Hmc.paramsToDenseVector(init.copy(kernelParameters = kp))
     val initState = HmcState(0, theta, 0)
     MarkovChain(initState)(Hmc(m, l, eps, newGrad, newLl).step)
   }
+
   /**
     * Sample the observation variance from a Gamma distributoin
     * Gibbs step using a conditionally-conjugate distribution
-    * @param prior the conditional conjugate prior distribtion for the 
+    * @param prior the conditional conjugate prior distribtion for the
     * measurement noise variance
     * @param ys a vector of data points
     * @param fx the currently sampled value of the function state
@@ -133,8 +118,7 @@ object KernelParameters {
     ys:    Vector[Data],
     fx:    Vector[Data]) = {
 
-    val ssy = innerJoin(ys, fx,
-      (a: Data, b: Data) => a.x === b.x).map {
+    val ssy = (ys zip fx).map {
       case (y, f) => (y.y - f.y) * (y.y - f.y)
     }.sum
 
@@ -189,7 +173,6 @@ object KernelParameters {
   /**
     * Calculate the gradient of the unconstrained Kernel Parameters
     * for a given distance
-    * TODO: Check constrains w.r.t derivatives
     */
   def gradient(p: Vector[KernelParameters])(dist: Double): Vector[Double] = p flatMap {
     case SquaredExp(hu, su) =>

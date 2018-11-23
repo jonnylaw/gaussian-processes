@@ -98,9 +98,9 @@ object Hmc {
     gradient: DenseVector[Double] => DenseVector[Double],
     l: Int)(
     theta: DenseVector[Double],
-    phi: DenseVector[Double]): (DenseVector[Double], DenseVector[Double]) = 
+    phi: DenseVector[Double]): (DenseVector[Double], DenseVector[Double]) =
     (1 to l).foldLeft((theta, phi)){ case ((t, p), _) =>
-      leapfrog(eps, gradient)(t, p)
+      leapfrog(eps, gradient)(t, p) }
 
   /**
     * Calculate the log-acceptance rate
@@ -140,6 +140,23 @@ object Hmc {
   def softplus(x: Double): Double =
     log1p(exp(x))
 
+  /**
+    * Transform parameters to a dense vector
+    */
+  def paramsToDenseVector(p: Parameters) =
+    DenseVector(p.toList.toArray)
+
+  /**
+    * Transform a dense vector to parameters
+    */
+  def vectorToParams(p: Parameters, pActual: DenseVector[Double]) = {
+    val n = p.meanParameters.toList.size
+    val ps = pActual.data.toVector
+    Parameters(
+      MeanParameters.vectorToParams(p.meanParameters, ps.take(n)),
+      KernelParameters.vectorToParams(p.kernelParameters, ps.drop(n))
+    )
+  }
 
   /**
     * Parameter in an HMC algorithm

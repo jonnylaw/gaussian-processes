@@ -1,6 +1,6 @@
-package examples
+package com.github.jonnylaw.gp.examples
 
-import gp.core._
+import com.github.jonnylaw.gp._
 import breeze.stats.distributions._
 import breeze.linalg.{DenseVector, diag}
 import java.nio.file.Paths
@@ -153,7 +153,7 @@ object PredictTemperature extends App with TemperatureModel {
   println(params)
 
   // read test locations
-  val locationFile = Paths.get("data/spatial_data/test_location.csv")
+  val locationFile = Paths.get("data/test_temperature_location.csv")
   val locReader = locationFile.asCsvReader[(String, Double, Double)](rfc.withHeader)
   val locations = locReader.
     collect {

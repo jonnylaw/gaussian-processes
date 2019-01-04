@@ -1,4 +1,4 @@
-package gp.core
+package com.github.jonnylaw.gp
 
 import breeze.numerics._
 import breeze.linalg.DenseMatrix

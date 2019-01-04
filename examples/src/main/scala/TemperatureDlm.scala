@@ -1,6 +1,6 @@
-package examples
+package com.github.jonnylaw.gp.examples
 
-import gp.core._
+import com.github.jonnylaw.gp._
 import breeze.stats.distributions._
 import breeze.stats.mean
 import breeze.linalg.{DenseVector, DenseMatrix, diag}
@@ -18,6 +18,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import math.{min, max}
 import dlm.core.model._
 
+// TODO: Try hourly temperature data
 trait TemperatureDlm {
   implicit val jodaDateTime: CellCodec[DateTime] = {
     val format = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
@@ -42,7 +43,7 @@ trait TemperatureDlm {
   val test_sensor = "new_new_emote_2604"
 
   // read in raw data
-  val rawData = Paths.get("data/daily_average_temp.csv")
+  val rawData = Paths.get("data/hourly_temp.csv")
   val reader = rawData.asCsvReader[Temperature](rfc.withHeader)
   val data: Vector[Temperature] = reader.
     collect {
@@ -54,13 +55,13 @@ trait TemperatureDlm {
     filter(_.name != test_sensor)
 
   val testData = data.
-    filter(_.name == test_sensor)
+    filter(_.name == "new_new_emote_2603")
 
   // data formatted for DLM
   val ys = trainingData.
     groupBy(_.date).
     map { case (t, temps) =>
-      Data(t.getMillis() / (60.0 * 60.0 * 1000.0 * 24), // time in days
+      Data(t.getMillis() / (60.0 * 60.0 * 1000.0),
            DenseVector(temps.map(s => s.obs).toArray))
     }.
     toVector.
@@ -80,7 +81,7 @@ trait TemperatureDlm {
       }
   }
 
-  val seasonalDlm = Dlm.polynomial(1) |+| Dlm.seasonal(7, 5)
+  val seasonalDlm = Dlm.polynomial(1) |+| Dlm.seasonal(24, 3) |+| Dlm.seasonal(7, 3)
   val mvDlmShareState = seasonalDlm.
     copy(f = (t: Double) => List.fill(8)(seasonalDlm.f(t)).
            reduce((a, b) => DenseMatrix.horzcat(a, b)))
@@ -91,8 +92,8 @@ trait TemperatureDlm {
   val dlmPs = Streaming.readCsv(file).
     map(_.map(_.toDouble).toList).
     drop(1000).
-    map(x => DlmParameters.fromList(8, 11)(x)).
-    via(Streaming.meanParameters(8, 11))
+    map(x => DlmParameters.fromList(8, 7)(x)).
+    via(Streaming.meanParameters(8, 7))
 }
 
 object FitTemperatureDlm extends App with TemperatureDlm {
@@ -104,9 +105,9 @@ object FitTemperatureDlm extends App with TemperatureDlm {
 
   val prior = for {
     v <- Applicative[Rand].replicateA(8, priorV)
-    w <- Applicative[Rand].replicateA(11, priorW)
-    m0 = Array.fill(11)(0.0)
-    c0 = Array.fill(11)(10.0)
+    w <- Applicative[Rand].replicateA(13, priorW)
+    m0 = Array.fill(13)(0.0)
+    c0 = Array.fill(13)(10.0)
   } yield DlmParameters(
       v = diag(DenseVector(v.toArray)),
       w = diag(DenseVector(w.toArray)),
@@ -120,7 +121,7 @@ object FitTemperatureDlm extends App with TemperatureDlm {
     s.p.toList
 
   Streaming.writeParallelChain(
-    iters, 2, 100000, "data/temperature_dlm_share_state", formatParameters).
+    iters, 2, 100000, "data/temperature_dlm_share_state_hourly", formatParameters).
     runWith(Sink.onComplete { s =>
               println(s)
               system.terminate()
@@ -134,7 +135,8 @@ object ForecastTemperatureDlm extends App with TemperatureDlm {
   val times: Vector[DateTime] = data.map(_.date)
 
   val out = new java.io.File(s"data/forecast_temperature.csv")
-  val headers = rfc.withHeader(false)
+  val sensorNames = trainingData.map(_.name).distinct.toList
+  val headers = rfc.withHeader("date" :: sensorNames.flatMap(n => List(s"mean_$n", s"lower_$n", s"upper_$n")): _*)
 
   (for {
      p <- dlmPs.runWith(Sink.head)
@@ -158,15 +160,16 @@ object StateTemperatureDlm extends App with TemperatureDlm {
 
   val out = new java.io.File(s"data/state_temperature_dlm.csv")
   val sensorNames = trainingData.map(_.name).distinct.toList
-  val headers = rfc.withHeader("day" :: sensorNames: _*)
+  val headers = rfc.withHeader("date" :: sensorNames: _*)
+  val n = 1000
 
   val res = for {
     p <- dlmPs.runWith(Sink.head)
-    state = Smoothing.ffbsDlm(mvDlmShareState, ys, p).sample(1000).
+    state = Smoothing.ffbsDlm(mvDlmShareState, ys, p).sample(n).
       map(_.map(x => x.copy(sample = mvDlmShareState.f(x.time).t * x.sample)))
     times: Vector[DateTime] = trainingData.map(_.date)
     meanState = state.transpose.zip(times).
-      map { case (x, t) => (t, x.map(_.sample).reduce(_ + _).map(_ / 1000).data.toList) }.toList
+      map { case (x, t) => (t, x.map(_.sample).reduce(_ + _).map(_ / n).data.toList) }.toList
     io = out.writeCsv(meanState, headers)
   } yield io
 
@@ -209,7 +212,7 @@ object TemperatureDlmGp extends App with TemperatureDlm {
     groupBy(a => (a.lon, a.lat)).
     map { case (l, ts) =>
       (Two(l._1, l._2), ts.groupBy(_.date).
-         map { case (t, d) => Data(t.getMillis / (60.0 * 60.0 * 1000.0 * 24.0),
+         map { case (t, d) => Data(t.getMillis / (60.0 * 60.0 * 1000.0),
                                    DenseVector(d.map(_.obs).toArray)) }.toVector)
     }.
     toVector
@@ -219,9 +222,9 @@ object TemperatureDlmGp extends App with TemperatureDlm {
 
   val prior = for {
     v <- Applicative[Rand].replicateA(8, priorV) // a different measurement variance for each sensor
-    w <- Applicative[Rand].replicateA(11, priorW)
-    m0 <- Applicative[Rand].replicateA(11, Gaussian(0.0, 1.0))
-    c0 <- Applicative[Rand].replicateA(11, InverseGamma(3.0, 3.0))
+    w <- Applicative[Rand].replicateA(13, priorW)
+    m0 <- Applicative[Rand].replicateA(13, Gaussian(0.0, 1.0))
+    c0 <- Applicative[Rand].replicateA(13, InverseGamma(3.0, 3.0))
     h <- InverseGamma(3.0, 4.0)
     sigma <- InverseGamma(3.0, 3.0)
     sigmaY <- InverseGamma(3.0, 3.0)
@@ -273,7 +276,7 @@ object FitTemperatureResiduals extends App {
   }
 
   case class Residuals(
-    day: DateTime,
+    date: DateTime,
     name: String,
     fitted: Double,
     temp: Double,
@@ -356,16 +359,86 @@ object FitTemperatureResiduals extends App {
             })
 }
 
-// perform a forecast using the DLM and GP
-// currently each training sensor has it's own measurement variance
-// hence predicting measurements at a new sensor location is impossible without
-// specifying the measurement variance -- this could be learned online using a conjugate filter...
 object ForecastTestDlm extends App with TemperatureDlm {
   implicit val system = ActorSystem("forecast_dlm_gp")
   implicit val materializer = ActorMaterializer()
 
   // extract the times from the test data
   val times: Vector[DateTime] = testData.map(_.date)
+
+  val testDataDlm = testData.
+    map(d => Data(d.date.getMillis / (60 * 60 * 1000), DenseVector(d.obs))).
+    sortBy(_.time)
+
+  val testMod = seasonalDlm
+
+  val out = new java.io.File("data/temperature_test_forecast_dlm.csv")
+  val headers = rfc.withHeader("date", "mean", "variance", "v_mean", "v_variance")
+
+  (for {
+     // get mean parameters
+     params <- dlmPs.runWith(Sink.head)
+     _ = println(params.w)
+
+     // perform prediction at test location for each day
+     // using shared state but conjugate filter to determine Unknown V
+    priorV = InverseGamma(3.0, 2.0)
+     p = params.copy(v = DenseMatrix(priorV.draw))
+     filtered = ConjugateFilter(priorV,
+                              ConjugateFilter.advanceState(p, testMod.g)).
+     filter(testMod, testDataDlm, p)
+     predictions = filtered.map(x => for {
+                                  f <- x.kfState.ft
+                                  q <- x.kfState.qt
+                                } yield List(f(0), q(0, 0),
+                                x.variance.head.mean, x.variance.head.variance))
+
+     // write out predictions
+     io = out.writeCsv(times.tail zip predictions.flatten, headers)
+   } yield io).
+    onComplete{ s =>
+      println(s)
+      system.terminate()
+    }
+}
+
+// perform forecast using the residuals from the fitted values
+object ForecastGp extends App with TemperatureDlm {
+  val paramsFile = Paths.get("data/temperature_gp_residuals_0.csv")
+  val paramsReader = paramsFile.asCsvReader[List[Double]](rfc.withHeader)
+  val chain = paramsReader.
+    collect {
+      case Right(a) => GaussianProcess.Parameters(
+        MeanParameters.zero,
+        Vector(KernelParameters.se(a(0), a(1)), KernelParameters.white(a(2)))
+      )
+    }.
+    drop(1000).
+    toStream.
+    zipWithIndex.
+    filter { case (_, i) => i % 20 == 0 }.
+    map(_._1)
+
+  // calculate mean of gpParameters parameters
+  val gpParams: GaussianProcess.Parameters = chain.
+    reduce { (a, b) =>
+      GaussianProcess.Parameters(
+        a.meanParameters add b.meanParameters,
+        (a.kernelParameters zip b.kernelParameters).
+          map { case (x, y) => x add y })
+    }.
+    map(p => p / chain.size)
+
+  val trainingDataDlmGp: Vector[Data] = trainingData.
+    groupBy(_.date).
+    map { case (date, ts) =>
+      Data(date.getMillis / (60 * 60 * 1000), DenseVector(ts.map(_.obs).toArray)) }.
+    toVector
+
+  /// use the training data
+  val trainingLocations = trainingData.
+    map(t => Two(t.lon, t.lat)).
+    distinct
 
   // read test location
   val locationFile = Paths.get("data/test_temperature_location.csv")
@@ -376,150 +449,36 @@ object ForecastTestDlm extends App with TemperatureDlm {
     }.
     toVector
 
-  val trainingDataDlmGp: Vector[Data] = trainingData.
+  case class Residuals(
+    date: DateTime,
+    name: String,
+    fitted: Double,
+    temp: Double,
+    lon: Double,
+    lat: Double,
+    residual: Double)
+
+  // read in residual data and convert to a data point
+  val rawData1 = Paths.get("data/dlm_temperature_residuals.csv")
+  val reader1 = rawData1.asCsvReader[Residuals](rfc.withHeader)
+  val residuals: Vector[(DateTime, Vector[GaussianProcess.Data])] = reader1.
+    collect {
+      case Right(a) => a
+    }.
+    toVector.
     groupBy(_.date).
-    map { case (date, ts) =>
-      Data(date.getMillis / (24 * 60 * 60 * 1000), DenseVector(ts.map(_.obs).toArray)) }.
+    map { case (date, ra) =>
+      (date, ra.map(d => GaussianProcess.Data(Two(d.lon, d.lat), d.residual))) }.
     toVector
 
-  val trainingLocations = trainingData.
-    map(t => Two(t.lon, t.lat)).
-    distinct
+  // perform a fit using the test location and the residuals from the training
+  // sites using the DLM model
+  val fitted = residuals.map(r =>
+    (r._1, Predict.fit(testLocation, r._2, dist, gpParams)))
 
-  val testDataDlmGp = testData.
-    map(d => Data(d.date.getMillis / (24 * 60 * 60 * 1000), DenseVector(d.obs)))
+  val out = fitted.
+    map { case (date, g) => (date, g.head._2.mean, g.head._2.variance) }
 
-  val out = new java.io.File("data/temperature_test_predictions_dlmgp.csv")
-  val headers = rfc.withHeader("day", "mean", "lower", "upper")
-
-  val paramsFile = Paths.get("data/temperature_gp_residuals_0.csv")
-  val paramsReader = paramsFile.asCsvReader[List[Double]](rfc.withHeader)
-  val chain = paramsReader.
-    collect {
-      case Right(a) => GaussianProcess.Parameters(
-        MeanParameters.zero,
-        Vector(KernelParameters.se(a(0), a(1)), KernelParameters.white(a(2)))
-      )
-    }.
-    drop(1000).
-    toStream.
-    zipWithIndex.
-    filter { case (_, i) => i % 20 == 0 }.
-    map(_._1)
-
-  // calculate mean of gpParameters parameters
-  val gpParams: GaussianProcess.Parameters = chain.
-    reduce { (a, b) =>
-      GaussianProcess.Parameters(
-        a.meanParameters add b.meanParameters,
-        (a.kernelParameters zip b.kernelParameters).
-          map { case (x, y) => x add y })
-    }.
-    map(p => p / chain.size)
-
-  (for {
-     // get mean parameters
-     dlmP <- dlmPs.runWith(Sink.head)
-     p = DlmGp.Parameters(dlmP, gpParams)
-
-     // perform prediction at test location for each day
-     fitted = DlmGp.forecast(trainingDataDlmGp, trainingLocations, testDataDlmGp,
-                             testLocation, model, seasonalDlm, p).
-     map(a => for {
-           m <- a.mean
-           c <- a.cov
-         } yield Gaussian(m.data.head, c.data.head)).
-     flatten
-
-     _ = fitted.foreach(println)
-
-    predictions = Predict.predict(fitted, 0.75)
-
-     // write out predictions
-     io = out.writeCsv(times zip predictions, headers)
-   } yield io).
-    onComplete{
-      s => println(s)
-      system.terminate()
-    }
-}
-
-// perform kriging on a regular grid to interpolate the temperature
-// could use more temperature sensors for this too
-object KrigTemperature extends App with TemperatureDlm {
-  implicit val system = ActorSystem("forecast_dlm_gp")
-  implicit val materializer = ActorMaterializer()
-
-  val times: Vector[DateTime] = trainingData.map(_.date)
-
-  // 1. Get a grid of locations
-  // 2. Use DlmGp.forecast to forecast at every location
-  // 3. Write the mean and covariance for each
-
-  val trainingLocations = trainingData.
-    map(t => Two(t.lon, t.lat)).
-    distinct
-
-  val lons: Vector[Double] = trainingLocations.map(_.x)
-  val lats: Vector[Double] = trainingLocations.map(_.y)
-
-  val locations = DlmGp.getGridLocations(lons, lats, 0.005)
-
-  val trainingDataDlmGp: Vector[Data] = trainingData.
-    groupBy(_.date).
-    map { case (date, ts) =>
-      Data(date.getMillis / (24 * 60 * 60 * 1000), DenseVector(ts.map(_.obs).toArray)) }.
-    toVector
-
-  val out = new java.io.File("data/temperature_kriging_dlmgp.csv")
-  val headers = rfc.withHeader("day", "lon", "lat", "mean")
-
-  val paramsFile = Paths.get("data/temperature_gp_residuals_0.csv")
-  val paramsReader = paramsFile.asCsvReader[List[Double]](rfc.withHeader)
-  val chain = paramsReader.
-    collect {
-      case Right(a) => GaussianProcess.Parameters(
-        MeanParameters.zero,
-        Vector(KernelParameters.se(a(0), a(1)), KernelParameters.white(a(2)))
-      )
-    }.
-    drop(1000).
-    toStream.
-    zipWithIndex.
-    filter { case (_, i) => i % 20 == 0 }.
-    map(_._1)
-
-  // calculate mean of gpParameters parameters
-  val gpParams: GaussianProcess.Parameters = chain.
-    reduce { (a, b) =>
-      GaussianProcess.Parameters(
-        a.meanParameters add b.meanParameters,
-        (a.kernelParameters zip b.kernelParameters).
-          map { case (x, y) => x add y })
-    }.
-    map(p => p / chain.size)
-
-  (for {
-     // get mean parameters
-     dlmP <- dlmPs.runWith(Sink.head)
-     p = DlmGp.Parameters(dlmP, gpParams)
-
-     // perform prediction at test location for each day
-     fitted = DlmGp.forecastLocations(trainingDataDlmGp, trainingLocations,
-                             locations, model, seasonalDlm, p).
-     map(_._2)
-
-     // predictions = Predict.predict(fitted, 0.75)
-
-     // write out predictions
-     locsPred: Vector[(DateTime, Double, Double, Double)] = (locations zip fitted).
-       zipWithIndex.
-       flatMap { case ((Two(x, y), f), i) => f.data.toVector.map(fi => (times(i), x, y, fi)) }
-
-     io = out.writeCsv(locsPred, headers)
-   } yield io).
-    onComplete{
-      s => println(s)
-      system.terminate()
-    }
+  val outFile = new java.io.File("data/fitted_test_temp_gp.csv")
+  outFile.writeCsv(out, rfc.withHeader("date", "mean", "variance"))
 }

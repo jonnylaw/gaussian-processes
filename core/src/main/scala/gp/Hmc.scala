@@ -1,75 +1,24 @@
-package gp.core
+package com.github.jonnylaw.gp
 
-import breeze.stats.distributions._
-import breeze.linalg.{DenseVector, DenseMatrix}
-import breeze.numerics.log1p
-import GaussianProcess._
-import math._
-
-/**
-  * Discrete uniform distribution
-  */
-case class DiscreteUniform(min: Int, max: Int) extends Rand[Int] {
-  def draw =
-    min + scala.util.Random.nextInt(max - min + 1)
-}
-
-case class HmcState(
-  iter:     Int,
-  theta:    DenseVector[Double],
-  accepted: Int)
-
-/**
-  * Hamiltonian Monte Carlo on unconstrained parameter spaces
-  * @param m the dimension of the parameter space
-  * @param l the number of leapgfrog steps
-  * @param eps the step size
-  * @param gradient
-  * @param ll
-  */
-case class Hmc(
-  m: Int,
-  l: Int,
-  eps: Double,
-  gradient: DenseVector[Double] => DenseVector[Double],
-  ll: DenseVector[Double] => Double) {
-
-  /**
-    * Prior distribution for the momentum variables
-    */
-  def priorPhi = {
-    val zero = DenseVector.zeros[Double](m)
-    MultivariateGaussian(zero, DenseMatrix.eye[Double](m))
-  }
-
-  /**
-    * A single step of the Hamiltonian Monte Carlo Algorithm
-    * @param s the current state
-    */
-  def step(s: HmcState): Rand[HmcState] = {
-    for {
-      phi <- priorPhi
-      (propTheta, propPhi) = Hmc.leapfrogs(eps, gradient, l)(s.theta, phi)
-      a = Hmc.logAcceptance(propTheta, propPhi, s.theta, phi, ll, priorPhi)
-      u <- Uniform(0, 1)
-      next = if (log(u) < a) {
-        HmcState(s.iter + 1, propTheta, s.accepted + 1)
-      } else {
-        s.copy(iter = s.iter + 1)
-      }
-    } yield next
-  }
-
-  /**
-    * Perform HMC for the Gaussian Process Hyper Parameters
-    */
-  def sample(init: DenseVector[Double]): Process[HmcState] = {
-    val initState = HmcState(0, init, 0)
-    MarkovChain(initState)(step)
-  }
-}
+import scala.annotation.tailrec
+import breeze.linalg.{DenseMatrix, DenseVector}
+import breeze.stats.distributions.{Rand, MultivariateGaussian}
 
 object Hmc {
+  def priorPhi(m: DenseMatrix[Double]) = {
+    val zero = DenseVector.zeros[Double](m.cols)
+    MultivariateGaussian(zero, m).map(_.data)
+  }
+
+  def phiHalfStep(eps: Double,
+                  theta: Array[Double],
+                  phi: Array[Double],
+                  gradient: Array[Double] => Array[Double]) =
+    phi.zip(gradient(theta)).map { case (p, dt) => p + dt * 0.5 * eps }
+
+  def thetaStep(eps: Double, theta: Array[Double], phi: Array[Double]) =
+    theta.zip(phi).map { case (t, p) => t + eps * p }
+
   /**
     * Perform a leapfrog full step with the momentum
     * @param theta the current value of the parameters
@@ -78,14 +27,13 @@ object Hmc {
     * @return a tuple containing the updated value of the parameters and
     * momentum
     */
-  def leapfrog(
-    eps: Double,
-    gradient: DenseVector[Double] => DenseVector[Double])(
-    theta: DenseVector[Double],
-    phi: DenseVector[Double]) = {
-    val p1 = phi + eps * 0.5 * gradient(theta)
-    val t1 = theta + eps * p1
-    val p2 = p1 + eps * 0.5 * gradient(t1)
+  def leapfrog(eps: Double,
+               gradient: Array[Double] => Array[Double],
+               theta: Array[Double],
+               phi: Array[Double]) = {
+    val p1 = phiHalfStep(eps, theta, phi, gradient)
+    val t1 = thetaStep(eps, theta, p1)
+    val p2 = phiHalfStep(eps, t1, p1, gradient)
 
     (t1, p2)
   }
@@ -93,108 +41,66 @@ object Hmc {
   /**
     * Perform l leapfrog steps
     */
-  def leapfrogs(
-    eps: Double,
-    gradient: DenseVector[Double] => DenseVector[Double],
-    l: Int)(
-    theta: DenseVector[Double],
-    phi: DenseVector[Double]): (DenseVector[Double], DenseVector[Double]) =
-    (1 to l).foldLeft((theta, phi)){ case ((t, p), _) =>
-      leapfrog(eps, gradient)(t, p) }
+  @tailrec
+  def leapfrogs(eps: Double,
+                gradient: Array[Double] => Array[Double],
+                l: Int,
+                theta: Array[Double],
+                phi: Array[Double]): (Array[Double], Array[Double]) = {
+    if (l == 0) {
+      (theta, phi)
+    } else {
+      val (t, p) = leapfrog(eps, gradient, theta, phi)
+      leapfrogs(eps, gradient, l - 1, t, p)
+    }
+  }
+
+  // E_k = 0.5 p^2
+  def kinetic(phi: Array[Double]): Double = {
+    var k = 0.0
+    var i = 0
+    while (i < phi.size) {
+      val p = phi(i)
+      k += (p * p)
+      i += 1
+    }
+    k * 0.5
+  }
+
+  def logDensity(theta: Array[Double],
+                 phi: Array[Double],
+                 pos: Array[Double] => Double) =
+    pos(theta) - kinetic(phi)
 
   /**
     * Calculate the log-acceptance rate
     */
-  def logAcceptance(
-    propTheta: DenseVector[Double],
-    propPhi: DenseVector[Double],
-    theta: DenseVector[Double],
-    phi: DenseVector[Double],
-    ll: DenseVector[Double] => Double,
-    priorPhi: ContinuousDistr[DenseVector[Double]]) = {
+  def logAcceptance(propTheta: Array[Double],
+                    propPhi: Array[Double],
+                    theta: Array[Double],
+                    phi: Array[Double],
+                    pos: Array[Double] => Double) = {
+    val a = logDensity(propTheta, propPhi, pos) - logDensity(theta, phi, pos)
+    if (a.isNaN) { Math.log(0.0) } else { a.min(0.0) }
+  }
 
-    // check if any parameters are NaN
-    val thetaNans = propTheta.data.map(_.isNaN).
-      foldLeft(false)((f, a) => a || f)
+  def step(eps: Double,
+           l: Int,
+           m: DenseMatrix[Double],
+           pos: Array[Double] => Double,
+           gradient: Array[Double] => Array[Double])(
+    theta: Array[Double]): Rand[(Array[Double], Double)] = {
 
-    if (thetaNans) {
-      -1e99
-    } else {
-      val ap = ll(propTheta) + priorPhi.logPdf(propPhi) -
-      ll(theta) - priorPhi.logPdf(phi)
-
-      if (ap.isNaN) {
-        -1e99
+    for {
+      phi <- priorPhi(m)
+      (t, p) = Hmc.leapfrogs(eps, gradient, l, theta, phi)
+      a = Hmc.logAcceptance(t, p, theta, phi, pos)
+      u <- breeze.stats.distributions.Uniform(0, 1)
+      next = if (math.log(u) < a) {
+        (t, a)
       } else {
-        ap
+        (theta, a)
       }
-    }
+    } yield next
   }
-
-  def logistic(x: Double): Double =
-    1.0 / (1.0 + exp(-x))
-
-  def logit(p: Double): Double = 
-    log(p / (1 - p))
-
-  def softplus(x: Double): Double =
-    log1p(exp(x))
-
-  /**
-    * Transform parameters to a dense vector
-    */
-  def paramsToDenseVector(p: Parameters) =
-    DenseVector(p.toList.toArray)
-
-  /**
-    * Transform a dense vector to parameters
-    */
-  def vectorToParams(p: Parameters, pActual: DenseVector[Double]) = {
-    val n = p.meanParameters.toList.size
-    val ps = pActual.data.toVector
-    Parameters(
-      MeanParameters.vectorToParams(p.meanParameters, ps.take(n)),
-      KernelParameters.vectorToParams(p.kernelParameters, ps.drop(n))
-    )
-  }
-
-  /**
-    * Parameter in an HMC algorithm
-    */
-  case class Parameter(
-    unconstrained: Double,
-    constrained: Double,
-    logJacobian: Double,
-    derivative: Double,
-    unconstrain: Double => Double,
-    constrain: Double => Double
-  )
-
-  def unbounded(x: Double) =
-    Parameter(x, x, 0, 0, x => x, x => x)
-
-  def bounded(min: Double, max: Double)(x: Double) = Parameter(
-    x,
-    logistic(x) * (max - min) + min,
-    log(max - min) - x + 2.0 * log(logistic(x)),
-    -1.0 + 2 * exp(-x) / (1.0 + exp(-x)),
-    y => logit((y - min) / (max - min)),
-    (y) => logistic(y) * (max - min) + min,
-  )
-
-  def boundedBelow(min: Double)(x: Double) = Parameter(
-    x,
-    exp(x) + min,
-    x,
-    1.0,
-    y => log(y - min),
-    y => exp(y) + min)
-
-  def boundedAbove(max: Double)(x: Double) = Parameter(
-    x,
-    max - exp(-x),
-    -x,
-    -1.0,
-    y => -log(max - y),
-    y => max - exp(-y))
 }

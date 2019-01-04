@@ -1,10 +1,9 @@
-package gp.core
+package com.github.jonnylaw.gp
 
 import breeze.linalg._
 import breeze.numerics._
 
 object Classify {
-
   /**
     * Multi class classification function returning the probability of fx
     * being in class C
@@ -12,23 +11,25 @@ object Classify {
     * @param c the class to consider
     * @return a Double representing the p(y = c | fx)
     */
-  def softmax(fx: DenseVector[Double], c: Int): Double = {
-
+  def softmax(fx: DenseVector[Double], c: Int): Double =
     exp(fx(c)) / sum(exp(fx))
-  }
 
-  def delta(y: DenseVector[Int], c: Int): Int = {
-
-    if (y(c - 1) == 1) 1 else 0
-  }
+  /**
+    * Determine if an observation y belongs to class c
+    */
+  def delta(y: DenseVector[Int], c: Int): Int =
+    y(c - 1)
 
   /**
     * Log-likelihood for multi-class classification
-    * @param xs
+    * @param fxs a sequence of fitted functions
+    * @param ys a sequence of one-hot encoded vectors
+    * @param classes the total number of classes
     */
-  def softmaxLl(fxs: Seq[Double],
-                ys: Seq[DenseVector[Int]],
-                classes: Int): Double = {
+  def softmaxLl(
+    fxs: Seq[Double],
+    ys: Seq[DenseVector[Int]],
+    classes: Int): Double = {
 
     val ls = for {
       (x, y) <- fxs zip ys
@@ -51,25 +52,24 @@ object Classify {
   }
 
   def objective(
-      a: DenseVector[Double],
-      fxs: Seq[DenseVector[Double]],
-      ys: Seq[Int],
-      classes: Int
-  ) = {
+    a: DenseVector[Double],
+    fxs: Seq[DenseVector[Double]],
+    ys: Seq[Int],
+    classes: Int): Double = {
     val f = DenseVector.vertcat(fxs: _*)
     val y = DenseVector.vertcat(encodeLabels(ys, classes): _*)
-    -0.5 * (a dot f) + (y dot f) + sum(
-      log(fxs.map(fx => exp(fx)).reduce(_ + _)))
+      -0.5 * (a dot f) + (y dot f) + sum(
+        log(fxs.map(fx => exp(fx)).reduce(_ + _)))
   }
 
   /**
     * Build a block diagonal matrix by combining two matrices of the same size
     */
-  def blockDiagonal(a: DenseMatrix[Double],
-                    b: DenseMatrix[Double]): DenseMatrix[Double] = {
+  def blockDiagonal(
+    a: DenseMatrix[Double],
+    b: DenseMatrix[Double]): DenseMatrix[Double] = {
 
     val right = DenseMatrix.zeros[Double](a.rows, b.cols)
-
     val left = DenseMatrix.zeros[Double](b.rows, a.cols)
 
     DenseMatrix.vertcat(
@@ -82,14 +82,15 @@ object Classify {
     * Perform Newton-Raphson to determine the (unique) maximum value for f
     * GPML Algorithm 3.3
     * @param ys a sequence of labels of length n
-    * @param ks a sequence of covariance matrices of length c with
+    * @param ks a sequence of covariance matrices of length c
     * @param tol the tolerance of the Newton Method
     * @param fxs the values of the latent function for each class
     */
-  def fit(ys: Seq[Int],
-          ks: Seq[DenseMatrix[Double]],
-          tol: Double,
-          classes: Int)(fxs: Seq[DenseVector[Double]]) = {
+  def fit(
+    ys: Seq[Int],
+    ks: Seq[DenseMatrix[Double]],
+    tol: Double,
+    classes: Int)(fxs: Seq[DenseVector[Double]]) = {
 
     // build a list of classification matrices
     val pis: Seq[DenseVector[Double]] =

@@ -1,4 +1,4 @@
-package examples
+package com.github.jonnylaw.gp.examples
 
 import com.cibo.evilplot.plot._
 import com.cibo.evilplot.plot.aesthetics.DefaultTheme._
@@ -7,7 +7,7 @@ import breeze.stats.mean
 
 /**
   * Diagnostics for MCMC output
-  * TODO: alter functions to accomodate multiple chains
+  * TODO: alter functions to accommodate multiple chains
   */
 object Diagnostics {
   /**
@@ -39,7 +39,7 @@ object Diagnostics {
   }
 
   /**
-    * 
+    * Plot the autocorrelation of 
     */
   def autocorrelations(xs: Vector[Vector[Double]]): Plot = {
     Facets(Vector(xs.transpose.map(autocorrelation)))
@@ -57,7 +57,7 @@ object Diagnostics {
 
   /**
     * Plot traceplots for a collection of parameters
-    * @param xs a vector of vectors, the first vector contains 
+    * @param xs a vector of vectors, the first vector contains
     * each iteration, the second, all parameters
     */
   def traceplots(xs: Vector[Vector[Double]]): Plot = {

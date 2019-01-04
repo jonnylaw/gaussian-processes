@@ -1,6 +1,6 @@
-package examples
+package com.github.jonnylaw.gp.examples
 
-import gp.core._
+import com.github.jonnylaw.gp._
 import breeze.stats.distributions.{Gaussian, Uniform, Gamma, Rand}
 import breeze.linalg.{diag, DenseVector}
 import cats._

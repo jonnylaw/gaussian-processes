@@ -1,4 +1,4 @@
-package gp.core
+package com.github.jonnylaw.gp
 
 import GaussianProcess._
 import breeze.stats.distributions._

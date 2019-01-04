@@ -1,4 +1,4 @@
-package gp.core
+package com.github.jonnylaw.gp
 
 import breeze.linalg.DenseVector
 

@@ -1,4 +1,4 @@
-package gp.core
+package com.github.jonnylaw.gp
 
 import breeze.linalg.{DenseMatrix, DenseVector}
 import breeze.stats.distributions._

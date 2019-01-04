@@ -3,7 +3,7 @@ import prop._
 // import org.scalactic.Equality
 import org.scalacheck.Gen
 import breeze.linalg.{DenseVector, DenseMatrix, diag}
-import gp.core._, Hmc._
+import com.github.jonnylaw.gp._
 
 // TODO: Write test for vector to params and param to vector
 
@@ -61,9 +61,9 @@ class Parameters
     with ParamGens {
 
   property(
-    "Parameters should convert to DenseVector and back given specifiction") {
+    "Parameters should convert to DenseVector and back given specification") {
     forAll(params) { (p: GaussianProcess.Parameters) =>
-      assert(vectorToParams(p, paramsToDenseVector(p)) === p)
+      assert(KernelParameters.arrayToParams(p, KernelParameters.paramsToArray(p)) === p)
     }
   }
 }

@@ -1,5 +1,5 @@
 lazy val commonSettings = Seq(
-  scalaVersion := "2.12.4",
+  scalaVersion := "2.12.7",
   name := "gaussian-processes",
   organization := "com.github.jonnylaw",
   version := "0.1.0",
@@ -10,18 +10,18 @@ lazy val commonSettings = Seq(
     "-feature",             // warn about misused language features
     "-language:higherKinds",// allow higher kinded types without `import scala.language.higherKinds`
     "-Xlint",               // enable handy linter warnings
-                            // "-Xfatal-warnings",     // turn compiler warnings into errors
+    "-Xfatal-warnings",     // turn compiler warnings into errors
     "-Ypartial-unification", // allow the compiler to unify type constructors of different arities
     "-language:implicitConversions" // allow implicit conversion of DLM -> DGLM
   ),
-  crossScalaVersions := Seq("2.11.11","2.12.6"),
+  crossScalaVersions := Seq("2.11.11","2.12.7"),
   credentials += Credentials(Path.userHome / ".sbt" / ".credentials"),
   licenses := Seq("APL2" -> url("http://www.apache.org/licenses/LICENSE-2.0.txt")),
   homepage := Some(url("https://jonnylaw.github.io/gaussian-processes")),
   scmInfo := Some(
     ScmInfo(
-      url("https://github.com/jonnylaw/bayesian_dlms"),
-      "scm:git@github.com:jonnylaw/bayesian_dlms.git"
+      url("https://github.com/jonnylaw/gaussian-processes"),
+      "scm:git@github.com:jonnylaw/gaussian-processes.git"
     )
   ),
   developers := List(
@@ -45,14 +45,11 @@ lazy val core = (project in file("core"))
     libraryDependencies ++= Seq(
       "org.scalanlp"             %% "breeze"              % "0.13.2",
       "com.github.fommil.netlib" % "all"                  % "1.1.2",
-      "com.github.nscala-time"   %% "nscala-time"         % "2.18.0",
-      "org.typelevel"            %% "cats-core"           % "1.0.1",
-      "com.stripe"               %% "rainier-core"        % "0.1.3",
+      "org.typelevel"            %% "cats-core"           % "1.5.0",
       "org.scalatest"            %% "scalatest"           % "3.0.5"  % "test",
       "org.scalacheck"           %% "scalacheck"          % "1.13.4" % "test"
     ),
   )
-  // .enablePlugins(TutPlugin) // for documentation
 
 lazy val examples = project
   .settings(

@@ -1,4 +1,4 @@
-package gp.core
+package com.github.jonnylaw.gp
 
 import cats._
 

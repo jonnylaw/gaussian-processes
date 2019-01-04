@@ -1,4 +1,4 @@
-package gp.core
+package com.github.jonnylaw.gp
 
 import breeze.stats.distributions._
 import breeze.linalg.{DenseVector, DenseMatrix, cholesky, sum, diag}
@@ -104,21 +104,21 @@ object GaussianProcess {
   def loglikelihood(observed: Vector[Data],
                     dist: (Location[Double], Location[Double]) => Double) = {
     p: Parameters =>
-      val covFn = KernelFunction(p.kernelParameters)
-      val xs = observed.map(_.x)
-      val n = xs.size
+    val covFn = KernelFunction(p.kernelParameters)
+    val xs = observed.map(_.x)
+    val n = xs.size
 
-      // covariance of observed
-      val nugget = diag(DenseVector.fill(xs.size)(1e-3))
-      val kxx = KernelFunction.buildCov(xs, covFn, dist) + nugget
+    // covariance of observed
+    val nugget = diag(DenseVector.fill(xs.size)(1e-3))
+    val kxx = KernelFunction.buildCov(xs, covFn, dist) + nugget
 
-      val meanFn = MeanFunction.apply(p.meanParameters)
-      val ys = DenseVector(observed.map(_.y).toArray) - DenseVector(
-        xs.map(meanFn).toArray)
-      val l = cholesky(kxx)
-      val u = Predict.forwardSolve(l, ys)
+    val meanFn = MeanFunction.apply(p.meanParameters)
+    val ys = DenseVector(observed.map(_.y).toArray) - DenseVector(
+      xs.map(meanFn).toArray)
+    val l = cholesky(kxx)
+    val u = Predict.forwardSolve(l, ys)
 
-      -0.5 * u dot u - sum(log(diag(l))) - n * 0.5 * log(2 * math.Pi)
+    -0.5 * u dot u - sum(log(diag(l))) - n * 0.5 * log(2 * math.Pi)
   }
 
   /**
@@ -161,7 +161,7 @@ object GaussianProcess {
   def mllGradient(
     observed: Vector[Data],
     dist: (Location[Double], Location[Double]) => Double
-  )(p: Parameters): DenseVector[Double] = {
+  )(p: Parameters): Array[Double] = {
 
     val covFn = KernelFunction(p.kernelParameters)
     val xs = observed.map(_.x)
@@ -178,6 +178,6 @@ object GaussianProcess {
 
     val alpha = kxx \ ys
 
-    DenseVector(grad.map { g => 0.5 * sum(diag(alpha * alpha.t * g - kxx \ g)) }.toArray)
+    grad.map { g => 0.5 * sum(diag(alpha * alpha.t * g - kxx \ g)) }.toArray
   }
 }

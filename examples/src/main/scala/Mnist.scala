@@ -1,9 +1,10 @@
-package examples
+package com.github.jonnylaw.gp.examples
 
 import java.io.{FileInputStream, DataInputStream}
 import java.nio.file.Paths
 import java.util.zip.GZIPInputStream
 import breeze.linalg._
+import com.github.jonnylaw.gp._
 
 /**
   * Use Gaussian Process Classification to determine the labels of handwritten
@@ -26,9 +27,10 @@ trait ReadMnist {
     )
   )
 
-  def readImage(rows: Int,
-                cols: Int,
-                stream: DataInputStream): DenseMatrix[Double] = {
+  def readImage(
+    rows: Int,
+    cols: Int,
+    stream: DataInputStream): DenseMatrix[Double] = {
 
     val m = new DenseMatrix[Double](rows, cols)
 
@@ -40,7 +42,9 @@ trait ReadMnist {
     m
   }
 
-  def readImageFile(stream: DataInputStream, checknum: Int = 2051) = {
+  def readImageFile(
+    stream: DataInputStream,
+    checknum: Int = 2051): Either[Exception, Stream[DenseMatrix[Double]]] = {
 
     val magicNumber = stream.readInt()
     if (magicNumber != checknum) {
@@ -56,7 +60,9 @@ trait ReadMnist {
     }
   }
 
-  def readLabelFile(stream: DataInputStream, checknum: Int = 2049) = {
+  def readLabelFile(
+    stream: DataInputStream,
+    checknum: Int = 2049): Either[Exception, Stream[Int]] = {
 
     val magicNumber = stream.readInt()
     if (magicNumber != checknum) {
@@ -72,12 +78,8 @@ trait ReadMnist {
     }
   }
 
-  val training = for {
+  val training: Either[Exception, Stream[(Int, DenseMatrix[Double])]] = for {
     images <- readImageFile(trainingImages)
     labels <- readLabelFile(trainingLabels)
-  } yield images zip labels
-}
-
-object ClassifyMnist extends App with ReadMnist {
-//  val fitted = Classify.fit(ys, ks, tol, 10)
+  } yield labels zip images
 }

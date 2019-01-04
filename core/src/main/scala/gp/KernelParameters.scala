@@ -1,4 +1,4 @@
-package gp.core
+package com.github.jonnylaw.gp
 
 import breeze.stats.distributions._
 import breeze.linalg.{DenseMatrix, DenseVector}
@@ -75,6 +75,29 @@ object KernelParameters {
   }
 
   /**
+    * Transform parameters to a dense vector
+    */
+  def paramsToArray(p: Parameters) =
+    p.toList.toArray
+
+  /**
+    * Transform a dense vector to parameters
+    */
+  def arrayToParams(p: Parameters, pActual: Array[Double]): Parameters = {
+    val n = p.meanParameters.toList.size
+    val ps = pActual.toVector
+    Parameters(
+      MeanParameters.vectorToParams(p.meanParameters, ps.take(n)),
+      KernelParameters.vectorToParams(p.kernelParameters, ps.drop(n))
+    )
+  }
+
+  case class HmcState(
+    iter:     Int,
+    theta:    DenseVector[Double],
+    accepted: Int)
+
+  /**
     * Sample GP parameters using HMC
     * @param ys a vector of observations of a GP
     */
@@ -83,29 +106,63 @@ object KernelParameters {
     dist: (Location[Double], Location[Double]) => Double,
     init: Parameters,
     ll:   Parameters => Double,
-    m:    Int,
+    m:    DenseMatrix[Double],
     l:    Int,
-    eps:  Double) = {
+    eps:  Double): Process[Array[Double]] = {
 
-    def newLl(p: DenseVector[Double]) = {
-      val params = Hmc.vectorToParams(init, p)
+    def newLl(p: Array[Double]) = {
+      val params = arrayToParams(init, p)
       val kp = KernelParameters.constrainParams(params.kernelParameters)
       ll(params.copy(kernelParameters = kp))
     }
-    def newGrad(p: DenseVector[Double]) = {
-      val params = Hmc.vectorToParams(init, p)
+    def newGrad(p: Array[Double]) = {
+      val params = arrayToParams(init, p)
       mllGradient(ys, dist)(params)
     }
 
     // unconstrain the parameters to they are on the whole real line
     val kp = KernelParameters.unconstrainParams(init.kernelParameters)
-    val theta = Hmc.paramsToDenseVector(init.copy(kernelParameters = kp))
-    val initState = HmcState(0, theta, 0)
-    MarkovChain(initState)(Hmc(m, l, eps, newGrad, newLl).step)
+    val theta = paramsToArray(init.copy(kernelParameters = kp))
+    MarkovChain(theta) { theta =>
+      for {
+        (tp, _) <- Hmc.step(eps, l, m, newLl, newGrad)(theta)
+      } yield tp
+    }
   }
 
   /**
-    * Sample the observation variance from a Gamma distributoin
+    * Perform sampling using empirical HMC, requiring no tuning of step
+    * size or leapfrog steps
+    */
+  def sampleEhmc(
+    ys: Vector[Data],
+    dist: (Location[Double], Location[Double]) => Double,
+    theta: Parameters,
+    ll: Parameters => Double,
+    l0: Int,
+    mu: Double,
+    warmupIterations: Int) = {
+
+    def newLl(p: Array[Double]) = {
+      val params = arrayToParams(theta, p)
+      val kp = KernelParameters.constrainParams(params.kernelParameters)
+      ll(params.copy(kernelParameters = kp))
+    }
+    def newGrad(p: Array[Double]) = {
+      val params = arrayToParams(theta, p)
+      mllGradient(ys, dist)(params)
+    }
+
+    // unconstrain the parameters to they are on the whole real line
+    val kp = KernelParameters.unconstrainParams(theta.kernelParameters)
+    val initTheta = paramsToArray(theta.copy(kernelParameters = kp))
+    val m = DenseMatrix.eye[Double](initTheta.size)
+    Ehmc.sample(l0, mu, m, newLl, newGrad, warmupIterations, initTheta)
+  }
+
+
+  /**
+    * Sample the observation variance from a Gamma distribution
     * Gibbs step using a conditionally-conjugate distribution
     * @param prior the conditional conjugate prior distribtion for the
     * measurement noise variance
@@ -176,15 +233,15 @@ object KernelParameters {
     */
   def gradient(p: Vector[KernelParameters])(dist: Double): Vector[Double] = p flatMap {
     case SquaredExp(hu, su) =>
-      val h = Hmc.boundedBelow(0)(hu)
-      val sc = Hmc.boundedBelow(0)(su)
+      val h = boundedBelow(0)(hu)
+      val sc = boundedBelow(0)(su)
       val s = sc.constrained
 
       Vector(math.exp(-(dist * dist) / (s * s)) + h.derivative,
         - (2 * h.constrained / (s * s * s)) * math.exp(-(dist * dist) / (s * s)) + sc.derivative)
 
     case White(su) => {
-      val s = Hmc.boundedBelow(0)(su)
+      val s = boundedBelow(0)(su)
       Vector(1.0 + s.derivative)
     }
     case Matern(_, _, _) => throw new Exception("Not implemented yet")
@@ -226,5 +283,55 @@ object KernelParameters {
       }
       ._1
   }
+
+  def logistic(x: Double): Double =
+    1.0 / (1.0 + exp(-x))
+
+  def logit(p: Double): Double =
+    log(p / (1 - p))
+
+  def softplus(x: Double): Double =
+    log1p(exp(x))
+
+  /**
+    * Parameters in an HMC algorithm
+    */
+  case class Parameter(
+    unconstrained: Double,
+    constrained: Double,
+    logJacobian: Double,
+    derivative: Double,
+    unconstrain: Double => Double,
+    constrain: Double => Double
+  )
+
+  def unbounded(x: Double) =
+    Parameter(x, x, 0, 0, x => x, x => x)
+
+  def bounded(min: Double, max: Double)(x: Double) = Parameter(
+    x,
+    logistic(x) * (max - min) + min,
+    log(max - min) - x + 2.0 * log(logistic(x)),
+    -1.0 + 2 * exp(-x) / (1.0 + exp(-x)),
+    y => logit((y - min) / (max - min)),
+    (y) => logistic(y) * (max - min) + min,
+    )
+
+  def boundedBelow(min: Double)(x: Double) = Parameter(
+    x,
+    exp(x) + min,
+    x,
+    1.0,
+    y => log(y - min),
+    y => exp(y) + min)
+
+  def boundedAbove(max: Double)(x: Double) = Parameter(
+    x,
+    max - exp(-x),
+    -x,
+    -1.0,
+    y => -log(max - y),
+    y => max - exp(-y))
+
 }
 

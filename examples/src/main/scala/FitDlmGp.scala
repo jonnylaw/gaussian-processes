@@ -1,9 +1,9 @@
-package examples
+package com.github.jonnylaw.gp.examples
 
 import breeze.stats.distributions._
 import breeze.linalg.{DenseVector, DenseMatrix, diag}
 import dlm.core.model._
-import gp.core._
+import com.github.jonnylaw.gp._
 import cats.implicits._
 
 /**

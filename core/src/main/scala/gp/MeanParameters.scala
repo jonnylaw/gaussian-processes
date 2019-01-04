@@ -1,4 +1,4 @@
-package gp.core
+package com.github.jonnylaw.gp
 
 import breeze.linalg.DenseVector
 import GaussianProcess._
@@ -115,7 +115,6 @@ object MeanParameters {
   def vectorToParams(p: MeanParameters, pActual: Vector[Double]) =
     p match {
       case Plane(beta) =>
-        val n = beta.size
         plane(DenseVector(pActual.toArray))
       case Zero => MeanParameters.zero
     }

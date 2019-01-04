@@ -1,4 +1,4 @@
-package gp.core
+package com.github.jonnylaw.gp
 
 import breeze.stats.distributions._
 import breeze.linalg.{DenseVector, DenseMatrix, cholesky, diag}
@@ -7,7 +7,6 @@ import GaussianProcess._
 import com.github.fommil.netlib.BLAS.{getInstance => blas}
 
 object Predict {
-
   /**
     * Helper function for fit chol
     * @param newx a new location
@@ -80,12 +79,13 @@ object Predict {
 
       ys = DenseVector(observed.map(_.y).toArray)
 
-      // calculate the mean and covariance
+
       // alpha = l.t \ (l \ ys)
       // v = l \ kxy
       // mean = kxy.t * alpha
       // cov = kyy - v.t * v
 
+      // calculate the mean and covariance
       u = forwardSolve(l, kxy)
       v = forwardSolve(l, ys)
       mean = u.t * v

@@ -39,26 +39,45 @@ lazy val commonSettings = Seq(
 
 ensimeScalaVersion in ThisBuild := "2.12.4"
 
+lazy val micrositeSettings = Seq(
+  micrositeName := "Gaussian Processes",
+  micrositeDescription := "Gaussian Processes",
+  micrositeBaseUrl := "/gaussian-processes",
+  micrositeDocumentationUrl := "/gaussian-processes/docs",
+  micrositeGithubOwner := "jonnylaw",
+  micrositeGithubRepo := "gaussian-processes",
+  micrositeImgDirectory := (resourceDirectory in Compile).value / "figures",
+  micrositeCssDirectory := (resourceDirectory in Compile).value / "styles",
+  micrositeHighlightTheme := "solarized-dark",
+  micrositeGithubToken := getEnvVar("GITHUB_TOKEN"),
+  micrositePushSiteWith := GitHub4s,
+  micrositeCDNDirectives := microsites.CdnDirectives(
+    jsList = List(
+      "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-MML-AM_CHTML"
+    ))
+)
+
 lazy val core = (project in file("core"))
   .settings(
-    commonSettings,
+    commonSettings ++ micrositeSettings,
+    resolvers += Resolver.bintrayRepo("cibotech", "public"),
     libraryDependencies ++= Seq(
       "org.scalanlp"             %% "breeze"              % "0.13.2",
       "com.github.fommil.netlib" % "all"                  % "1.1.2",
+      "com.cibo"                 %% "evilplot"            % "0.6.3",
       "org.typelevel"            %% "cats-core"           % "1.5.0",
       "org.scalatest"            %% "scalatest"           % "3.0.5"  % "test",
       "org.scalacheck"           %% "scalacheck"          % "1.13.4" % "test"
     ),
-  )
+  ).
+  enablePlugins(MicrositesPlugin)
 
 lazy val examples = project
   .settings(
-    resolvers += Resolver.bintrayRepo("cibotech", "public"),
     libraryDependencies ++= Seq(
       "com.nrinaudo"         %% "kantan.csv"          % "0.4.0",
       "com.nrinaudo"         %% "kantan.csv-generic"  % "0.4.0",
       "com.github.jonnylaw"  %% "bayesian_dlms"       % "0.4.1",
-      "com.cibo"             %% "evilplot"            % "0.3.2"
     )
   )
   .dependsOn(core)

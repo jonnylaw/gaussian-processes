@@ -18,7 +18,6 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import math.{min, max}
 import dlm.core.model._
 
-// TODO: Try hourly temperature data
 trait TemperatureDlm {
   implicit val jodaDateTime: CellCodec[DateTime] = {
     val format = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")

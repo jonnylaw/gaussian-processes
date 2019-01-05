@@ -1,7 +1,7 @@
 package com.github.jonnylaw.gp
 
 import breeze.stats.distributions._
-import breeze.linalg.{DenseVector, DenseMatrix, cholesky, sum, diag}
+import breeze.linalg.{DenseVector, DenseMatrix, cholesky, sum, diag, eigSym}
 import breeze.numerics.log
 import cats.implicits._
 
@@ -63,7 +63,7 @@ object GaussianProcess {
     */
   def draw(xs: Vector[Location[Double]],
            dist: (Location[Double], Location[Double]) => Double,
-           p: Parameters) = {
+           p: Parameters)(implicit rand: RandBasis = Rand) = {
 
     val nugget = diag(DenseVector.fill(xs.size)(1e-3))
     val covariance = KernelFunction.buildCov(
@@ -71,9 +71,12 @@ object GaussianProcess {
       KernelFunction.apply(p.kernelParameters),
       dist) + nugget
 
-    val mean = DenseVector(xs.map(MeanFunction.apply(p.meanParameters)).toArray)
+    val mu = DenseVector(xs.map(MeanFunction.apply(p.meanParameters)).toArray)
 
-    MultivariateGaussian(mean, covariance)
+    val root = eigSym(covariance)
+
+    val x = DenseVector.rand(mu.length, rand.gaussian(0, 1))
+    mu + (root.eigenvectors * diag(root.eigenvalues.mapValues(math.sqrt)) * x)
   }
 
   def vecToData(vec: DenseVector[Double], xs: Vector[Location[Double]]) = {

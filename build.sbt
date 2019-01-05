@@ -10,7 +10,7 @@ lazy val commonSettings = Seq(
     "-feature",             // warn about misused language features
     "-language:higherKinds",// allow higher kinded types without `import scala.language.higherKinds`
     "-Xlint",               // enable handy linter warnings
-    "-Xfatal-warnings",     // turn compiler warnings into errors
+//    "-Xfatal-warnings",     // turn compiler warnings into errors
     "-Ypartial-unification", // allow the compiler to unify type constructors of different arities
     "-language:implicitConversions" // allow implicit conversion of DLM -> DGLM
   ),
@@ -37,7 +37,7 @@ lazy val commonSettings = Seq(
   }
 )
 
-ensimeScalaVersion in ThisBuild := "2.12.4"
+//ensimeScalaVersion in ThisBuild := "2.12.4"
 
 lazy val micrositeSettings = Seq(
   micrositeName := "Gaussian Processes",
@@ -49,7 +49,7 @@ lazy val micrositeSettings = Seq(
   micrositeImgDirectory := (resourceDirectory in Compile).value / "figures",
   micrositeCssDirectory := (resourceDirectory in Compile).value / "styles",
   micrositeHighlightTheme := "solarized-dark",
-  micrositeGithubToken := getEnvVar("GITHUB_TOKEN"),
+  micrositeGithubToken := sys.env.get("GITHUB_TOKEN"),
   micrositePushSiteWith := GitHub4s,
   micrositeCDNDirectives := microsites.CdnDirectives(
     jsList = List(
@@ -59,25 +59,33 @@ lazy val micrositeSettings = Seq(
 
 lazy val core = (project in file("core"))
   .settings(
-    commonSettings ++ micrositeSettings,
+    commonSettings,
     resolvers += Resolver.bintrayRepo("cibotech", "public"),
     libraryDependencies ++= Seq(
-      "org.scalanlp"             %% "breeze"              % "0.13.2",
-      "com.github.fommil.netlib" % "all"                  % "1.1.2",
-      "com.cibo"                 %% "evilplot"            % "0.6.3",
-      "org.typelevel"            %% "cats-core"           % "1.5.0",
-      "org.scalatest"            %% "scalatest"           % "3.0.5"  % "test",
-      "org.scalacheck"           %% "scalacheck"          % "1.13.4" % "test"
+      "org.scalanlp"             %% "breeze"     % "0.13.2",
+      "com.github.fommil.netlib" % "all"         % "1.1.2",
+      "com.cibo"                 %% "evilplot"   % "0.6.3",
+      "com.47deg"                %% "github4s"   % "0.19.0",
+      "org.typelevel"            %% "cats-core"  % "1.5.0",
+      "org.scalatest"            %% "scalatest"  % "3.0.5"  % "test",
+      "org.scalacheck"           %% "scalacheck" % "1.13.4" % "test"
     ),
-  ).
-  enablePlugins(MicrositesPlugin)
+  )
 
-lazy val examples = project
+lazy val docs = (project in file("docs"))
+  .settings(moduleName := "docs")
+  .settings(micrositeSettings: _*)
+  .enablePlugins(MicrositesPlugin)
+  .enablePlugins(TutPlugin)
+  .dependsOn(core)
+
+lazy val examples = (project in file("examples"))
   .settings(
     libraryDependencies ++= Seq(
-      "com.nrinaudo"         %% "kantan.csv"          % "0.4.0",
-      "com.nrinaudo"         %% "kantan.csv-generic"  % "0.4.0",
-      "com.github.jonnylaw"  %% "bayesian_dlms"       % "0.4.1",
+      "com.nrinaudo"           %% "kantan.csv"         % "0.4.0",
+      "com.nrinaudo"           %% "kantan.csv-generic" % "0.4.0",
+      "com.github.jonnylaw"    %% "bayesian_dlms"      % "0.4.0",
+      "com.github.nscala-time" %% "nscala-time"        % "2.20.0"
     )
   )
   .dependsOn(core)

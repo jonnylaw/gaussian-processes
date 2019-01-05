@@ -1,4 +1,10 @@
 ---
 layout: docs
-title: "Introduction to the Gaussian Process"
+title: "Covariance Functions"
 ---
+
+# White
+
+# Squared Exponential
+
+# Matern

@@ -37,7 +37,7 @@ trait TestModel {
 
 object SimulateGp extends App with TestModel {
   val xs = GaussianProcess.samplePoints(-10.0, 10.0, 300).map(One.apply)
-  val ys = GaussianProcess.draw(xs, dist, params).draw.data.toVector
+  val ys = GaussianProcess.draw(xs, dist, params).data.toVector
 
   val out = new java.io.File("data/simulated_gp.csv")
   out.writeCsv(xs.map(_.x) zip ys, rfc.withHeader("x", "y"))
@@ -49,7 +49,7 @@ object SimulateGpReplicate extends App with TestModel {
   val p = 50
 
   val res: Vector[(Int, Double, Double)] = Vector.range(1, p).
-    flatMap(_ => GaussianProcess.draw(xs, dist, params).draw.data.toVector).
+    flatMap(_ => GaussianProcess.draw(xs, dist, params).data.toVector).
     zip((1 to p).flatMap(i => Vector.fill(xs.size)(i))).
     zip(Vector.fill(p)(xs.map(_.x)).flatten).
     map { case ((y, i), x) => (i, x, y) }
@@ -157,7 +157,6 @@ object ParametersSimulatedGp extends App with TestModel {
 
   def format(p: GaussianProcess.Parameters): List[Double] =
     p.kernelParameters.flatMap(_.toList).toList ::: p.meanParameters.toList
-
 
   // write iters to file
   Streaming.

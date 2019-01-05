@@ -25,7 +25,7 @@ distance for measurements on global scale.
 In order to simulate data from a Gaussian Process, first specify a vector of locations:
 
 ```tut
-val xs = GaussianProcess.samplePoints(-10.0, 10.0, 300).
+val xs = GaussianProcess.samplePoints(-10.0, 10.0, 100).
   map(One.apply)
 ```
 
@@ -58,12 +58,22 @@ Then a draw from a zero-mean Gaussian Process prior with covariance matrix
 `covMat` at locations `xs` can be performed:
 
 ```tut
-val zero = DenseVector.zero[Double](300)
-val ys = breeze.stats.distributions.MultivariateGaussian(zero, covMat).draw
+import breeze.linalg._
+import breeze.stats.distributions._
+val root = eigSym(covMat)
+val x = DenseVector.rand(covMat.cols, Gaussian(0, 1))
+val ys = root.eigenvectors * diag(root.eigenvalues.mapValues(math.sqrt)) * x
 ```
 
 Then the data can be plotted:
 
 ```tut
-Plot.scatterPlot(GaussianProcess.vecToData(xs, ys))
+import com.cibo.evilplot.plot.aesthetics.DefaultTheme._
+
+val sims = GaussianProcess.vecToData(ys, xs)
+Plot.scatterPlot(sims).
+  render()
+//  write(new java.io.File("figures/simulated_gp.png"))
 ```
+
+![Simulated GP](figures/simulated_gp.png)

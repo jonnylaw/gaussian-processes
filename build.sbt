@@ -50,6 +50,7 @@ lazy val micrositeSettings = Seq(
   micrositeCssDirectory := (resourceDirectory in Compile).value / "styles",
   micrositeHighlightTheme := "solarized-dark",
   micrositeGithubToken := sys.env.get("GITHUB_TOKEN"),
+  micrositeShareOnSocial := false,
   micrositePushSiteWith := GitHub4s,
   micrositeCDNDirectives := microsites.CdnDirectives(
     jsList = List(

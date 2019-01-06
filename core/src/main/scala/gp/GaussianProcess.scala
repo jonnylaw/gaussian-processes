@@ -86,8 +86,7 @@ object GaussianProcess {
   def drawData(
       xs: Vector[Location[Double]],
       dist: (Location[Double], Location[Double]) => Double,
-      p: Parameters
-  ) = {
+      p: Parameters) = {
 
     val covariance = KernelFunction.buildCov(
       xs,

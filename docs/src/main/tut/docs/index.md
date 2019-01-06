@@ -74,6 +74,7 @@ import com.cibo.evilplot.plot.aesthetics.DefaultTheme._
 
 val sims = GaussianProcess.vecToData(ys, xs)
 Plot.scatterPlot(sims).
+  standard().
   render().
   write(new java.io.File("docs/src/main/resources/figures/simulated_gp.png"))
 ```

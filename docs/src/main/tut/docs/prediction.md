@@ -6,11 +6,11 @@ title: "Fitting a Gaussian Process"
 Given values of the hyper parameters of the covariance and mean functions. Then
 we can determine the posterior distribution of the function \(y \approx f(x)\)
 given paired data \((x, y)\) where \(x\) is in the domain of the function.
-Typically, \(x\) will be a location or time and $y$ is a process we want to learn about.
+Typically, \(x\) will be a location or time and \(y\) is a process we want to learn about.
 
-For a continuous outcome, $y$ the likelihood and prior is Gaussian, resulting in
-a posterior distribution which is also Gaussian and can be derived exactly.
-Given a location with an unknown measurement, $y(x^\star)$, then the posterior
+For a continuous outcome, \(y\) the likelihood and prior is Gaussian, resulting
+in a posterior distribution which is also Gaussian and can be derived exactly.
+Given a location with an unknown measurement, \(y(x^\star)\), then the posterior
 is Gaussian and can be determined analytically by calculating the mean and variance:
 
 $$ \begin{align*}
@@ -19,8 +19,9 @@ $$ \begin{align*}
 \end{align*} $$
 
 Suppose that we want to determine the posterior distribution of the function
-\(f(x)\) by observing finitely many points from the simulation in the [GP
-introduction](introduction.html). This can be simulated by specifying the
+\(f(x)\) by observing finitely many points from the using the same parameters,
+distance and covariance function used in the [GP
+introduction](index.html). This can be simulated by specifying the
 parameters and a distance function:
 
 ```tut
@@ -28,7 +29,7 @@ import com.github.jonnylaw.gp._
 
 val params = GaussianProcess.Parameters(
   MeanParameters.zero,
-  Vector(KernelParameters.se(3.0, 5.5))
+  Vector(KernelParameters.se(3.0, 5.5), KernelParameters.white(1.0))
 )
 val dist = Location.euclidean _
 
@@ -52,8 +53,8 @@ the posterior mean and variance given the observed data:
 ```tut
 implicit val integralD = scala.math.Numeric.DoubleAsIfIntegral
 val testPoints = Vector.range(-10.0, 10.0, 0.01).map(One(_))
-// draw from the GP posterior at values of testPoints
-val fitted = Predict.fit(testPoints ++ observed.map(_.x), observed, dist, params)
+val fitted = Predict.fit(testPoints, observed, dist,
+params)
 ```
 
 This calculates the mean and covariance at each of the test points. This can be
@@ -62,11 +63,11 @@ used to determine posterior probability intervals for the function which can the
 ```tut
 import com.cibo.evilplot.plot.aesthetics.DefaultTheme._
 
-Plot.gpPlot(fitted)
-com.cibo.evilplot.plot.Overlay(Plot.scatterPlot(observed)).
+com.cibo.evilplot.plot.Overlay(
+  Plot.gpPlot(fitted),
+  Plot.scatterPlot(observed)).
   render().
   write(new java.io.File("docs/src/main/resources/figures/fitted_gp.png"))
 ```
 
 <img src="../img/fitted_gp.png" alt="Posterior distribution of Gaussian Process" width="600"/>
-

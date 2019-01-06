@@ -1,0 +1,11 @@
+name: Gaussian Processes
+baseurl: /gaussian-processes
+description: Gaussian Processes
+highlighter: rouge
+docs: true
+collections:
+  tut:
+    output: true
+version: 0.1.0-SNAPSHOT
+org: docs
+markdown: kramdown

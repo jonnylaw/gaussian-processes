@@ -1,4 +1,4 @@
-package com.github.jonnylaw.gp
+package com.github.jonnylaw.gp.examples
 
 import com.cibo.evilplot.plot._
 import com.cibo.evilplot.plot.aesthetics.DefaultTheme._

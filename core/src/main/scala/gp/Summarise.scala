@@ -4,16 +4,15 @@ import breeze.linalg.{DenseMatrix, DenseVector}
 import breeze.stats.distributions._
 
 object Summarise {
-
   /**
-    * Calculate the intervals
+    * Calculate the interval
     */
   def getInterval(mean: Double, variance: Double, interval: Double) = {
     Gaussian(mean, math.sqrt(variance)).inverseCdf(interval)
   }
 
   /**
-    * Extract the diagonal elements of the Breeze dense vector
+    * Extract the diagonal elements of the Breeze DenseMatrix
     */
   def getDiagonal(m: DenseMatrix[Double]): Vector[Double] = {
     for {

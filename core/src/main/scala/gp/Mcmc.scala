@@ -3,7 +3,6 @@ package com.github.jonnylaw.gp
 import GaussianProcess._
 import breeze.stats.distributions._
 import breeze.linalg.{DenseVector, DenseMatrix}
-import cats.implicits._
 import com.github.fommil.netlib.BLAS.{getInstance => blas}
 import cats.data.Kleisli
 

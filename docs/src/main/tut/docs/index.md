@@ -3,7 +3,7 @@ layout: docs
 title: "Introduction to the Gaussian Process"
 ---
 
-A Gaussian Process can be used to approximate a non-linear function $y = f(x)$. To get started with the Gaussian Process package, first import the library:
+A Gaussian Process can be used to approximate a non-linear function `\(y = f(x)\)`. To get started with the Gaussian Process package, first import the library:
 
 ```tut:silent
 import com.github.jonnylaw.gp._
@@ -42,14 +42,15 @@ covariance function:
 
 $$K(x, y) = h\exp\left\{ \frac{1}{\sigma^2}\textrm{d}(x, y)^2 \right\}$$
 
-$\sigma$ is known as the length scale, large values of sigma indicate that large
-changes in distance are required for the covariance to change significantly. $h$
-controls the amount of change between two points. The squared exponential
-function can be applied to the distance matrix using a `map`
+`\(\sigma\)` is known as the length scale, large values of sigma indicate that large
+changes in distance are required for the covariance to change significantly.
+`\(h\)` controls the amount of change between two points. In addition some white
+noise (Normally distributed with mean zero) representing independent measurement
+noise can be added to the covariance function. Then the covariance function can be applied to the distance matrix using a `map`:
 
 ```tut
-val covFn: Double => Double = KernelFunction.squaredExponential(h = 3.0, sigma =
-5.0)
+val covFn = (distance: Double) => KernelFunction.squaredExponential(h = 3.0,
+sigma = 5.0)(distance) + KernelFunction.white(sigma = 0.5)(distance)
 
 val covMat = m.map(covFn)
 ```
@@ -57,23 +58,24 @@ val covMat = m.map(covFn)
 Then a draw from a zero-mean Gaussian Process prior with covariance matrix
 `covMat` at locations `xs` can be performed:
 
-```tut
+```tut:silent
 import breeze.linalg._
 import breeze.stats.distributions._
-val root = eigSym(covMat)
+val nugget = diag(DenseVector.fill(xs.size)(1e-3))
+val root = eigSym(covMat + nugget)
 val x = DenseVector.rand(covMat.cols, Gaussian(0, 1))
 val ys = root.eigenvectors * diag(root.eigenvalues.mapValues(math.sqrt)) * x
 ```
 
-Then the data can be plotted:
+Then the data can be plotted and saved:
 
-```tut
+```tut:silent
 import com.cibo.evilplot.plot.aesthetics.DefaultTheme._
 
 val sims = GaussianProcess.vecToData(ys, xs)
 Plot.scatterPlot(sims).
-  render()
-//  write(new java.io.File("figures/simulated_gp.png"))
+  render().
+  write(new java.io.File("docs/src/main/resources/figures/simulated_gp.png"))
 ```
 
-![Simulated GP](figures/simulated_gp.png)
+<img src="../img/simulated_gp.png" alt="Simulated Gaussian Process" width="600"/>

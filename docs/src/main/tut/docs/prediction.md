@@ -4,23 +4,22 @@ title: "Fitting a Gaussian Process"
 ---
 
 Given values of the hyper parameters of the covariance and mean functions. Then
-we can determine the posterior distribution of the function $f(x)$ given paired
-data $(x, y)$ where $x$ is in the domain of the function and $y$ is in the range
-of the function. Typically, $x$ will be a location or time and $y$ is a process
-we want to learn about.
+we can determine the posterior distribution of the function \(y \approx f(x)\)
+given paired data \((x, y)\) where \(x\) is in the domain of the function.
+Typically, \(x\) will be a location or time and $y$ is a process we want to learn about.
 
 For a continuous outcome, $y$ the likelihood and prior is Gaussian, resulting in
 a posterior distribution which is also Gaussian and can be derived exactly.
 Given a location with an unknown measurement, $y(x^\star)$, then the posterior
 is Gaussian and can be determined analytically by calculating the mean and variance:
 
-\begin{align*}
+$$ \begin{align*}
 \mathbb{E}(y(x^\star)) &= K(x_\star, \textbf{x})^T(K(\textbf{x}, \textbf{x}) + I_n\sigma_y)^{-1}\textbf{y} \\
 \textrm{Var}(y(x^\star)) &= K(x_\star, x_\star) - K(x_\star, \textbf{x})^T(K(\textbf{x}, \textbf{x}) + I_n\sigma_y^2)^{-1}K(x_\star, \textbf{x})
-\end{align*}
+\end{align*} $$
 
 Suppose that we want to determine the posterior distribution of the function
-$f(x)$ by observing finitely many points from the simulation in the [GP
+\(f(x)\) by observing finitely many points from the simulation in the [GP
 introduction](introduction.html). This can be simulated by specifying the
 parameters and a distance function:
 
@@ -65,9 +64,9 @@ import com.cibo.evilplot.plot.aesthetics.DefaultTheme._
 
 Plot.gpPlot(fitted)
 com.cibo.evilplot.plot.Overlay(Plot.scatterPlot(observed)).
-  render()
-//  write(new java.io.File("figures/fitted_gp.png"))
+  render().
+  write(new java.io.File("docs/src/main/resources/figures/fitted_gp.png"))
 ```
 
-![Fitted GP](figures/fitted_gp.png)
+<img src="../img/fitted_gp.png" alt="Posterior distribution of Gaussian Process" width="600"/>
 

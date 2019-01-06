@@ -2,8 +2,8 @@ options:
   - title: Getting Started
     url: docs/index.html
 
-  - title: Introduction to Gaussian Processes
-    url: docs/introduction.html
+  - title: Prediction
+    url: docs/prediction.html
 
   - title: Parameter Inference
     url: docs/parameter_inference.html

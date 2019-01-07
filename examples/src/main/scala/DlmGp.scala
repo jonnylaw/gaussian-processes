@@ -176,10 +176,10 @@ object DlmGp {
 
     val ft = mod.dlm.f(t0.get).t * p.dlm.m0
     // val kf = SvdState(t0.get - 1, p.dlm.m0, dc0, uc0, p.dlm.m0, dc0, uc0, ft)
-    val kf = KfState(t0.get - 1, p.dlm.m0, p.dlm.c0, p.dlm.m0, p.dlm.c0, None, None, 0.0)
+    val kf = KfState(t0.get - 1, p.dlm.m0, p.dlm.c0, p.dlm.m0, p.dlm.c0, None, None)
     val v0 = Vector.fill(testLocation.size)(priorV)
     val ckf = InverseGammaState(KfState(t0.get - 1.0, p.dlm.m0, p.dlm.c0,
-                                        p.dlm.m0, p.dlm.c0, None, None, 0.0), v0)
+                                        p.dlm.m0, p.dlm.c0, None, None), v0)
     val init = State(kf, ckf, None, None)
 
     (testData zip trainingData).

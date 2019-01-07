@@ -10,6 +10,8 @@ sealed trait MeanParameters {
 
   def toList: List[Double]
 
+  def toMap: Map[String, Double]
+
   def add(that: MeanParameters): MeanParameters
 }
 
@@ -23,6 +25,10 @@ case class Plane(beta: DenseVector[Double]) extends MeanParameters {
   }
 
   def toList = beta.data.toList
+
+  def toMap = beta.data.zipWithIndex.map { case (b, i) =>
+    (s"beta_$i" -> b)
+  }.toMap
 }
 
 case object Zero extends MeanParameters {
@@ -35,6 +41,8 @@ case object Zero extends MeanParameters {
   }
 
   def toList = Nil
+
+  def toMap = Map.empty[String, Double]
 }
 
 object MeanParameters {

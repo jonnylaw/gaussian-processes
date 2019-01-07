@@ -14,7 +14,6 @@ lazy val commonSettings = Seq(
     "-Ypartial-unification", // allow the compiler to unify type constructors of different arities
     "-language:implicitConversions" // allow implicit conversion of DLM -> DGLM
   ),
-  crossScalaVersions := Seq("2.11.11","2.12.7"),
   credentials += Credentials(Path.userHome / ".sbt" / ".credentials"),
   licenses := Seq("APL2" -> url("http://www.apache.org/licenses/LICENSE-2.0.txt")),
   homepage := Some(url("https://jonnylaw.github.io/gaussian-processes")),
@@ -54,7 +53,7 @@ lazy val micrositeSettings = Seq(
   micrositePushSiteWith := GitHub4s,
   micrositeCDNDirectives := microsites.CdnDirectives(
     jsList = List(
-      "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-MML-AM_CHTML"
+      "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML"
     ))
 )
 

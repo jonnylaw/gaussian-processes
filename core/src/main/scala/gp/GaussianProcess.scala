@@ -23,6 +23,9 @@ object GaussianProcess {
 
     def toList: List[Double] =
       meanParameters.toList ++ kernelParameters.toList.flatMap(_.toList)
+
+    def toMap: Map[String, Double] =
+      meanParameters.toMap ++ kernelParameters.flatMap(_.toMap)
   }
 
   /**

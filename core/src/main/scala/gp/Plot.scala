@@ -42,4 +42,13 @@ object Plot {
                        lineStyle = LineStyle.DashDot.some).some))
     .standard()
   }
+
+  def ppPlot(gps: Vector[Vector[(Location[Double], Gaussian)]]) = {
+    val toPlot = gps.map(gp => LinePlot(gp.map {
+      case (One(x), g) => Point(x, g.mean)
+      case _ => throw new Exception("PP plot can only display one dimensional data") }))
+
+    Overlay(toPlot: _*).
+      standard()
+  }
 }

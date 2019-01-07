@@ -13,6 +13,8 @@ sealed trait KernelParameters { self =>
 
   def toList: List[Double]
 
+  def toMap: Map[String, Double]
+
   def add(that: KernelParameters): KernelParameters
 }
 
@@ -22,6 +24,8 @@ case class SquaredExp(h: Double, sigma: Double) extends KernelParameters {
   }
 
   def toList = h :: sigma :: Nil
+
+  def toMap = Map("h" -> h, "sigma" -> sigma)
 
   def add(that: KernelParameters) = that match {
     case SquaredExp(h1, sigma1) =>
@@ -42,6 +46,8 @@ case class Matern(sigma: Double, nu: Double, l: Double) extends KernelParameters
       KernelParameters.matern(sigma + sigma1, nu + nu1, l + l1)
     case _ => throw new Exception
   }
+
+  def toMap = Map("sigma" -> sigma, "nu" -> nu, "l" -> l)
 }
 
 case class White(sigma: Double) extends KernelParameters {
@@ -56,6 +62,8 @@ case class White(sigma: Double) extends KernelParameters {
       KernelParameters.white(sigma + sigma1)
     case _ => throw new Exception
   }
+
+  def toMap = Map("sigma_y" -> sigma)
 }
 
 object KernelParameters {

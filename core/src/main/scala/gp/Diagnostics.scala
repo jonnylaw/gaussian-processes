@@ -1,4 +1,4 @@
-package com.github.jonnylaw.gp.examples
+package com.github.jonnylaw.gp
 
 import com.cibo.evilplot.plot._
 import com.cibo.evilplot.plot.aesthetics.DefaultTheme._
@@ -50,9 +50,6 @@ object Diagnostics {
     */
   def traceplot(xs: Vector[Double]): Plot = {
     LinePlot(xs.zipWithIndex.map { case (x, i) => Point(i, x) })
-      .xAxis()
-      .yAxis()
-      .frame()
   }
 
   /**
@@ -66,22 +63,20 @@ object Diagnostics {
 
   def histogram(xs: Vector[Double]): Plot = {
     Histogram(xs)
-      .xAxis()
-      .yAxis()
-      .frame()
   }
 
   def histograms(xs: Vector[Vector[Double]]): Plot = {
     Facets(Vector(xs.transpose.map(histogram)))
   }
 
-  def density(xs: Vector[Vector[Double]]): Plot = ???
-
   /**
     * Plot Traceplot and histograms for an MCMC chain
     */
-  def diagnostics(xs: Vector[Vector[Double]]): Plot = {
-    val t = xs.transpose
-    Facets(Vector(t.map(traceplot), t.map(histogram)))
+  def diagnostics(xs: Vector[Map[String, Double]]): Plot = {
+    val t = xs.map(_.values).transpose
+    val names = xs.head.keys.toSeq
+    Facets(Vector(t.map(traceplot), t.map(histogram))).
+      standard().
+      topLabels(names)
   }
 }

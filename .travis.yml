@@ -2,19 +2,20 @@ language: scala
 scala:
 - 2.11.11
 - 2.12.7
+jdk:
+- oraclejdk8
 before_install:
 - export PATH=${PATH}:./vendor/bundle
 install:
 - rvm use 2.6.0 --install --fuzzy
 - gem update --system
 - gem install sass
-- gem install jekyll -v 3.2.1
-script:
-- sbt ++$TRAVIS_SCALA_VERSION test scripted
+- gem install jekyll bundler
+
 after_success:
-- if [ "$TRAVIS_BRANCH" = "master" -a "$TRAVIS_PULL_REQUEST" = "false" ]; then
-bash scripts/publishMicrosite.sh; fi
+- if [ "$TRAVIS_BRANCH" = "master" -a "$TRAVIS_PULL_REQUEST" = "false" ]; then bash scripts/publishMicrosite.sh; fi
 - if [ "$TRAVIS_PULL_REQUEST" = "true" ]; then echo "Not in master branch, skipping deploy and release"; fi
+
 env:
   global:
     secure: UWcz3Jy6oZGbZg44bkPZihBxcP3zVfEjNAUD/Lw1ojN4ak+iQJOjR9HFMCKLMjam0cnKcTPTVXJSf8+Rn9t4+Va+VbBlXX+LvDtQFjX00nXXRPWDT7Tyf17OqIhGS4oOCLmy2Kw90z0Sdq8C8JJy8zzqKxtnvUGjYPQTpsDVUOy5yQnSfahe2aLAfLvSC0Ifv7aQzuBFOgf6O/O0ek0NLpDrPauLTKLd8HulxDVgSzv8+KdWdfixhUqEYexZUOwW4Q8l3qpBX8oaGlM01RRxSeFxaKHtut6EA3XOzmwHMflaoUWIGnvgQ8tNzT8ANWtH64w03Bgk/nZhoVryXgHhMcZXkpuxm8ddSsCFMIl59jI5pzj2KPlaktMPHq+G775hBkBWLodb7/LtfqJMt+8EbI73wPNI8ckO+KpMxt/pCTF/s1LZQcCIHEMyNtYrvO4iQFyGbTCgLOzLN2Zx79N+9aExeO5kuxN5LeH3zUmrZNwz6bv0sXB3HH68fb4KiTRWGujqMCS2fiUavbnBcDCnQtWDpHOa7kUZ6PZBvaKtB6Drw1PxvsoaetPN+T9dDD2DR9/3J/Cum8cUHHUTHxC2bOi1AhJrx7qE0mK+EgRkdY1RsCFWmF7QNPNwOSppPE5IR03vUiAd3qlortURw8SQGEBRSNkb2MpRI4cfp1rlmzk=

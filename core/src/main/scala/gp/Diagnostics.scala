@@ -39,7 +39,7 @@ object Diagnostics {
   }
 
   /**
-    * Plot the autocorrelation of 
+    * Plot the autocorrelation of all factors of a Markov Chain
     */
   def autocorrelations(xs: Vector[Vector[Double]]): Plot = {
     Facets(Vector(xs.transpose.map(autocorrelation)))

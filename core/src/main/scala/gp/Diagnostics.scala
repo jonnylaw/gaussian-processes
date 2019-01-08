@@ -50,6 +50,10 @@ object Diagnostics {
     */
   def traceplot(xs: Vector[Double]): Plot = {
     LinePlot(xs.zipWithIndex.map { case (x, i) => Point(i, x) })
+      .xAxis()
+      .yAxis()
+      .frame()
+      .xLabel("Iteration")
   }
 
   /**
@@ -63,6 +67,9 @@ object Diagnostics {
 
   def histogram(xs: Vector[Double]): Plot = {
     Histogram(xs)
+      .xAxis()
+      .yAxis()
+      .frame()
   }
 
   def histograms(xs: Vector[Vector[Double]]): Plot = {
@@ -76,7 +83,6 @@ object Diagnostics {
     val t = xs.map(_.values).transpose
     val names = xs.head.keys.toSeq
     Facets(Vector(t.map(traceplot), t.map(histogram))).
-      standard().
       topLabels(names)
   }
 }

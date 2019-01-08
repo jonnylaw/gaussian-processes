@@ -96,7 +96,7 @@ def proposal(delta: Double)(ps: Vector[KernelParameters]) = ps traverse {
 ```
 
 Now the `sample` function can be used to determine the covariance function
-hyper-parameters given the observed data,  observing only every 15th point:
+hyper-parameters given the observed data,  observing every 10th simulated point:
 
 ```tut:silent
 val observed = GaussianProcess.vecToData(ys, xs).
@@ -109,7 +109,7 @@ val init = params
 
 val iters = MarkovChain(init)(step).
   steps.
-  drop(10000).
+  drop(90000).
   take(10000).
   toVector
 ```
@@ -168,35 +168,3 @@ com.cibo.evilplot.plot.Overlay(Plot.ppPlot(res), Plot.scatterPlot(observed)).
 ```
 
 <img src="../img/posterior_predictive_gp.png" alt="Posterior predictive distribution" width="600"/>
-
-# Hamiltonian Monte Carlo
-
-Hamiltonian Monte Carlo (HMC) methods can be used to determine the posterior
-distribution of the hyper-parameters. HMC uses the gradient of the log-posterior
-in order to make more efficient proposals. 
-
-```tut:silent
-import breeze.linalg.DenseMatrix
-
-val alpha = 2.0
-val beta = 2.0
-val priorSigma = GradDist.gamma(Gamma(alpha, 1.0 / beta))
-val priorH = GradDist.gamma(Gamma(alpha, 1.0 / beta))
-val priorSigmaY = GradDist.gamma(Gamma(alpha, 1.0 / beta))
-val prior = Vector(priorSigma, priorH, priorSigmaY)
-
-KernelParameters.sampleHmc(observed, dist, init,
-  prior, DenseMatrix.eye[Double](3), 5, 0.2).
-  steps.
-  take(10).
-  toVector.
-  foreach(println)
-```
-
-The parameter diagnostics for the HMC method with 5 leapfrog steps and step-size 0.2
-
-<!-- ```tut:silent -->
-<!-- Diagnostics.diagnostics(hmcIters.map { ps => ps.toMap }). -->
-<!--   render(). -->
-<!--   write(new java.io.File("docs/src/main/resources/figures/parameters_weakly_informative_gp.png")) -->
-<!-- ``` -->

@@ -109,11 +109,14 @@ object KernelParameters {
     * Sample GP parameters using HMC
     * @param ys a vector of observations of a GP
     * @param dist a distance function
+    * @param prior a vector of univariate prior distributions for the kernel
     * @param init the initial value of the parameters
     * @param m the covariance matrix of the proposal
     * distribution for momentum phi
     * @param l the number of leapfrog steps
     * @param eps the leapfrog step size
+    * @return samples from a Markov Chain with stationary distribution equal to
+    * the posterior distribution of the hyper-parameters
     */
   def sampleHmc(
     ys:    Vector[Data],
@@ -124,7 +127,7 @@ object KernelParameters {
     l:     Int,
     eps:   Double): Process[Array[Double]] = {
 
-    def newLl(p: Array[Double]) = {
+    def ll(p: Array[Double]) = {
       val params = arrayToParams(init, p)
       val kp = KernelParameters.constrainParams(params.kernelParameters)
       prior.zip(p).map { case (pr, pa) => pr.logPdf(pa) }.sum +
@@ -145,7 +148,7 @@ object KernelParameters {
     val theta = paramsToArray(init.copy(kernelParameters = kp))
     MarkovChain(theta) { theta =>
       for {
-        (tp, _) <- Hmc.step(eps, l, m, newLl, grad)(theta)
+        (tp, _) <- Hmc.step(eps, l, m, ll, grad)(theta)
       } yield tp
     }
   }
@@ -153,31 +156,45 @@ object KernelParameters {
   /**
     * Perform sampling using empirical HMC, requiring no tuning of step
     * size or leapfrog steps
+    * @param ys the observed data
+    * @param dist a distance function
+    * @param theta the initial value of the GP parameters
+    * @param prior a vector of univariate prior distributions for the kernel
+    * parameters in the order of the initial kernel parameters
+    * @param l0 the initial number of leapfrog steps to use
+    * @param warmupIterations the number of warmup iterations to perform when
+    * determining the leapfrog step size
+    * @return
     */
   def sampleEhmc(
     ys: Vector[Data],
     dist: (Location[Double], Location[Double]) => Double,
-    theta: Parameters,
-    ll: Parameters => Double,
+    init: Parameters,
+    prior: Vector[GradDist[Double]],
     l0: Int,
-    mu: Double,
     warmupIterations: Int) = {
 
-    def newLl(p: Array[Double]) = {
-      val params = arrayToParams(theta, p)
+    def ll(p: Array[Double]) = {
+      val params = arrayToParams(init, p)
       val kp = KernelParameters.constrainParams(params.kernelParameters)
-      ll(params.copy(kernelParameters = kp))
+      prior.zip(p).map { case (pr, pa) => pr.logPdf(pa) }.sum +
+        GaussianProcess.loglikelihood(ys, dist)(params.copy(kernelParameters = kp))
     }
+
     def grad(p: Array[Double]) = {
-      val params = arrayToParams(theta, p)
-      mllGradient(ys, dist)(params)
+      val params = arrayToParams(init, p)
+      val evalPrior = prior.zip(p).map { case (pr, pa) => pr.gradLogPdf(pa) }
+      val evalLl = mllGradient(ys, dist)(params)
+
+      (evalLl zip evalPrior).
+        map { case (l, pa) => l + pa }
     }
 
     // unconstrain the parameters to they are on the whole real line
-    val kp = KernelParameters.unconstrainParams(theta.kernelParameters)
-    val initTheta = paramsToArray(theta.copy(kernelParameters = kp))
+    val kp = KernelParameters.unconstrainParams(init.kernelParameters)
+    val initTheta = paramsToArray(init.copy(kernelParameters = kp))
     val m = DenseMatrix.eye[Double](initTheta.size)
-    Ehmc.sample(l0, mu, m, newLl, grad, warmupIterations, initTheta)
+    Ehmc.sample(l0, m, ll, grad, warmupIterations, initTheta)
   }
 
   /**

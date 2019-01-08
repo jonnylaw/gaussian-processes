@@ -165,6 +165,35 @@ object ParametersSimulatedGp extends App with TestModel {
     runWith(Sink.onComplete(_ => system.terminate()))
 }
 
+object HmcSimulated extends App with TestModel {
+  implicit val system = ActorSystem("fit_simulated_gp")
+  implicit val materializer = ActorMaterializer()
+
+  val rawData = Paths.get("examples/data/simulated_gp.csv")
+  val reader = rawData.asCsvReader[List[Double]](rfc.withHeader)
+  val data = reader.
+    collect {
+      case Right(a) => GaussianProcess.Data(One(a.head), a(1))
+    }.
+    toVector.
+    zipWithIndex.
+    filter { case (_, i) => (i + 1) % 15 == 0 }.
+    map(_._1)
+
+  val priorSigmaY = GradDist.gamma(Gamma(10, 6))
+  val priorSigma = GradDist.gamma(Gamma(3, 6))
+  val priorh = GradDist.gamma(Gamma(3.0, 4.0))
+  val prior = Vector(priorh, priorSigma, priorSigmaY)
+
+  val iters = KernelParameters.sampleEhmc(data, dist, params, prior, 5, 2000)
+
+  // write iters to file
+  Streaming.
+    writeParallelChain(iters, 2, 1000, "data/gpmcmc",
+                       (x: Array[Double]) => x.toList).
+    runWith(Sink.onComplete(_ => system.terminate()))
+}
+
 object PosteriorPredictive extends App with TestModel {
   val rawData = Paths.get("data/simulated_gp.csv")
   val reader = rawData.asCsvReader[List[Double]](rfc.withHeader)

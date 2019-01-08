@@ -100,7 +100,6 @@ object Ehmc {
 
   def sample(
     l0: Int,
-    mu: Double,
     m: DenseMatrix[Double],
     pos: Array[Double] => Double,
     gradient: Array[Double] => Array[Double],
@@ -111,7 +110,7 @@ object Ehmc {
 
     val m = DenseMatrix.eye[Double](initTheta.size)
     val eps = DualAverage.tuneStepsize(warmupIterations, initTheta, l0,
-                                       mu, m, pos, gradient, delta)
+                                       m, pos, gradient, delta)
     val empiricalL = empiricalLongestStep(eps, l0, m, pos, gradient, initTheta, k)
 
     MarkovChain(initTheta) { theta =>

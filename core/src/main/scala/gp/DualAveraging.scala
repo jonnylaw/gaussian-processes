@@ -99,10 +99,15 @@ object DualAverage {
     loop(initTheta, initPhi, eps, 0)
   }
 
+  /**
+    * Tune the leapfrog step size to find an optimal value
+    * @param mu a tuning parameter of the dual averaging scheme used to determine
+    * the optimal step size, recommended inital value log(10 eps0) where eps0
+    * is the initial step size
+    */
   def tuneStepsize(k: Int,
                    params: Array[Double],
                    l0: Int,
-                   mu: Double,
                    m: DenseMatrix[Double],
                    pos: Array[Double] => Double,
                    gradient: Array[Double] => Array[Double],
@@ -110,6 +115,7 @@ object DualAverage {
 
     val phi = Hmc.priorPhi(m).draw
     val eps0 = DualAverage.findReasonableEpsilon(params, phi, pos, gradient)
+    val mu = log(10 * eps0)
     val init = DualAverageState(1, params, log(eps0), 0.0, 0.0)
 
     MarkovChain(init)(step(l0, mu, m, pos, gradient)).

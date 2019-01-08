@@ -4,6 +4,7 @@ import com.cibo.evilplot.plot._
 import com.cibo.evilplot.plot.aesthetics.DefaultTheme._
 import com.cibo.evilplot.numeric.Point
 import com.cibo.evilplot.plot.renderers._
+import com.cibo.evilplot.colors._
 import com.cibo.evilplot.geometry._
 import breeze.stats.distributions.Gaussian
 import cats.implicits._
@@ -44,9 +45,12 @@ object Plot {
   }
 
   def ppPlot(gps: Vector[Vector[(Location[Double], Gaussian)]]) = {
-    val toPlot = gps.map(gp => LinePlot(gp.map {
-      case (One(x), g) => Point(x, g.mean)
-      case _ => throw new Exception("PP plot can only display one dimensional data") }))
+    val toPlot = gps.map { gp =>
+      LinePlot(gp.map {
+                 case (One(x), g) => Point(x, g.mean)
+                 case _ =>
+                   throw new Exception("PP plot can only display one dimensional data") },
+               pathRenderer = PathRenderer.default(color = HTMLNamedColors.red.copy(opacity = 0.5).some).some) }
 
     Overlay(toPlot: _*).
       standard()

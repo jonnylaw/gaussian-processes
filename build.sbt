@@ -62,13 +62,13 @@ lazy val core = (project in file("core"))
     commonSettings,
     resolvers += Resolver.bintrayRepo("cibotech", "public"),
     libraryDependencies ++= Seq(
-      "org.scalanlp"             %% "breeze"     % "0.13.2",
-      "com.github.fommil.netlib" % "all"         % "1.1.2",
-      "com.cibo"                 %% "evilplot"   % "0.6.3",
-      "com.47deg"                %% "github4s"   % "0.19.0",
-      "org.typelevel"            %% "cats-core"  % "1.5.0",
-      "org.scalatest"            %% "scalatest"  % "3.0.5"  % "test",
-      "org.scalacheck"           %% "scalacheck" % "1.13.4" % "test"
+      "org.scalanlp"             %% "breeze"       % "0.13.2",
+      "com.github.fommil.netlib" %  "all"          % "1.1.2",
+      "com.cibo"                 %% "evilplot"     % "0.6.3",
+      "com.47deg"                %% "github4s"     % "0.19.0",
+      "org.typelevel"            %% "cats-core"    % "1.5.0",
+      "org.scalatest"            %% "scalatest"    % "3.0.5"  % "test",
+      "org.scalacheck"           %% "scalacheck"   % "1.13.4" % "test"
     ),
   )
 

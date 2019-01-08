@@ -101,7 +101,7 @@ hyper-parameters given the observed data,  observing only every 15th point:
 ```tut:silent
 val observed = GaussianProcess.vecToData(ys, xs).
     zipWithIndex.
-    filter { case (_, i) => (i + 1) % 15 == 0 }.
+    filter { case (_, i) => (i + 1) % 10 == 0 }.
     map(_._1)
 
 val step = KernelParameters.sample(observed, dist, prior, proposal(0.05))
@@ -141,10 +141,11 @@ def discreteUniform(min: Int, max: Int) = new Rand[Int] {
   def draw = scala.util.Random.nextInt(max - min) + min
 }
 
-val replicates = 10
+val replicates = 50
 
-// sample from the parameters and perform a fit
-val indices = discreteUniform(0, iters.size).sample(replicates).toVector
+// uniformly sample indices
+val indices = discreteUniform(0, iters.size).
+  sample(replicates).toVector
 
 // create a regular grid of points to draw from the GP posterior
 implicit val integralD = scala.math.Numeric.DoubleAsIfIntegral
@@ -158,14 +159,44 @@ val parameters = indices.toVector.map(i => iters(i))
 val res = parameters.map(predict)
 ```
 
-The draws from the posterior distribution can then be plotted:
+The posterior mean of the latent function at each of the `p = 50` sampled parameters can be plotted:
 
 ```tut:silent
-Plot.ppPlot(res).
+com.cibo.evilplot.plot.Overlay(Plot.ppPlot(res), Plot.scatterPlot(observed)).
   render().
   write(new java.io.File("docs/src/main/resources/figures/posterior_predictive_gp.png"))
 ```
 
-<img src="../img/posterior_predictive_gp.png" alt="Parameter diagnostics" width="600"/>
+<img src="../img/posterior_predictive_gp.png" alt="Posterior predictive distribution" width="600"/>
 
-# HMC and eHMC
+# Hamiltonian Monte Carlo
+
+Hamiltonian Monte Carlo (HMC) methods can be used to determine the posterior
+distribution of the hyper-parameters. HMC uses the gradient of the log-posterior
+in order to make more efficient proposals. 
+
+```tut:silent
+import breeze.linalg.DenseMatrix
+
+val alpha = 2.0
+val beta = 2.0
+val priorSigma = GradDist.gamma(Gamma(alpha, 1.0 / beta))
+val priorH = GradDist.gamma(Gamma(alpha, 1.0 / beta))
+val priorSigmaY = GradDist.gamma(Gamma(alpha, 1.0 / beta))
+val prior = Vector(priorSigma, priorH, priorSigmaY)
+
+KernelParameters.sampleHmc(observed, dist, init,
+  prior, DenseMatrix.eye[Double](3), 5, 0.2).
+  steps.
+  take(10).
+  toVector.
+  foreach(println)
+```
+
+The parameter diagnostics for the HMC method with 5 leapfrog steps and step-size 0.2
+
+<!-- ```tut:silent -->
+<!-- Diagnostics.diagnostics(hmcIters.map { ps => ps.toMap }). -->
+<!--   render(). -->
+<!--   write(new java.io.File("docs/src/main/resources/figures/parameters_weakly_informative_gp.png")) -->
+<!-- ``` -->

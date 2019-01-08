@@ -1,0 +1,163 @@
+<html><head><title>Gaussian Processes: Parameter Inference</title><meta charset="utf-8" /><meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="author" content="docs" /><meta name="description" content="Gaussian Processes" /><meta name="og:image" content="/gaussian-processes/img/poster.png" /><meta name="image" property="og:image" content="/gaussian-processes/img/poster.png" /><meta name="og:title" content="Gaussian Processes: Parameter Inference" /><meta name="title" property="og:title" content="Gaussian Processes: Parameter Inference" /><meta name="og:site_name" content="Gaussian Processes" /><meta name="og:url" content="" /><meta name="og:type" content="website" /><meta name="og:description" content="Gaussian Processes" /><link rel="icon" type="image/png" href="/gaussian-processes/img/favicon.png" /><meta name="twitter:title" content="Gaussian Processes: Parameter Inference" /><meta name="twitter:image" content="/gaussian-processes/img/poster.png" /><meta name="twitter:description" content="Gaussian Processes" /><meta name="twitter:card" content="summary_large_image" /><link rel="icon" type="image/png" sizes="16x16" href="/gaussian-processes/img/favicon16x16.png" /><link rel="icon" type="image/png" sizes="24x24" href="/gaussian-processes/img/favicon24x24.png" /><link rel="icon" type="image/png" sizes="32x32" href="/gaussian-processes/img/favicon32x32.png" /><link rel="icon" type="image/png" sizes="48x48" href="/gaussian-processes/img/favicon48x48.png" /><link rel="icon" type="image/png" sizes="57x57" href="/gaussian-processes/img/favicon57x57.png" /><link rel="icon" type="image/png" sizes="60x60" href="/gaussian-processes/img/favicon60x60.png" /><link rel="icon" type="image/png" sizes="64x64" href="/gaussian-processes/img/favicon64x64.png" /><link rel="icon" type="image/png" sizes="70x70" href="/gaussian-processes/img/favicon70x70.png" /><link rel="icon" type="image/png" sizes="72x72" href="/gaussian-processes/img/favicon72x72.png" /><link rel="icon" type="image/png" sizes="76x76" href="/gaussian-processes/img/favicon76x76.png" /><link rel="icon" type="image/png" sizes="96x96" href="/gaussian-processes/img/favicon96x96.png" /><link rel="icon" type="image/png" sizes="114x114" href="/gaussian-processes/img/favicon114x114.png" /><link rel="icon" type="image/png" sizes="120x120" href="/gaussian-processes/img/favicon120x120.png" /><link rel="icon" type="image/png" sizes="128x128" href="/gaussian-processes/img/favicon128x128.png" /><link rel="icon" type="image/png" sizes="144x144" href="/gaussian-processes/img/favicon144x144.png" /><link rel="icon" type="image/png" sizes="150x150" href="/gaussian-processes/img/favicon150x150.png" /><link rel="icon" type="image/png" sizes="152x152" href="/gaussian-processes/img/favicon152x152.png" /><link rel="icon" type="image/png" sizes="196x196" href="/gaussian-processes/img/favicon196x196.png" /><link rel="icon" type="image/png" sizes="310x310" href="/gaussian-processes/img/favicon310x310.png" /><link rel="icon" type="image/png" sizes="310x150" href="/gaussian-processes/img/favicon310x150.png" /><link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" /><link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" /><link rel="stylesheet" href="/gaussian-processes/highlight/styles/solarized-dark.css" /><link rel="stylesheet" href="/gaussian-processes/css/style.css" /><link rel="stylesheet" href="/gaussian-processes/css/palette.css" /><link rel="stylesheet" href="/gaussian-processes/css/codemirror.css" /><link rel="stylesheet" href="/gaussian-processes/css/solarized-dark.css" /></head><body class="docs"><div id="wrapper"><div id="sidebar-wrapper"><ul id="sidebar" class="sidebar-nav"><li class="sidebar-brand"><a href="/gaussian-processes/" class="brand"><div class="brand-wrapper"><span>Gaussian Processes</span></div></a></li> <li><a href="/gaussian-processes/docs/index.html" class="">Getting Started</a></li> <li><a href="/gaussian-processes/docs/prediction.html" class="">Prediction</a></li> <li><a href="/gaussian-processes/docs/parameter_inference.html" class=" active ">Parameter Inference</a></li></ul></div><div id="page-content-wrapper"><div class="nav"><div class="container-fluid"><div class="row"><div class="col-lg-12"><div class="action-menu pull-left clearfix"><a href="#menu-toggle" id="menu-toggle"><i class="fa fa-bars" aria-hidden="true"></i></a></div><ul class="pull-right"><li id="gh-eyes-item" class="hidden-xs"><a href="https://github.com/jonnylaw/gaussian-processes"><i class="fa fa-eye"></i><span>WATCH<span id="eyes" class="label label-default">--</span></span></a></li><li id="gh-stars-item" class="hidden-xs"><a href="https://github.com/jonnylaw/gaussian-processes"><i class="fa fa-star-o"></i><span>STARS<span id="stars" class="label label-default">--</span></span></a></li></ul></div></div></div></div><div id="content" data-github-owner="jonnylaw" data-github-repo="gaussian-processes"><div class="content-wrapper"><section><h1 id="metropolis-hastings">Metropolis-Hastings</h1>
+
+<p>The Metropolis-Hastings algorithm can be used to determine the hyper-parameter
+posterior distribution. This in turn allows us to determine the posterior distribution
+of the latent function $y = f(x)$. Suppose that the model is defined as in the
+<a href="index.html">introduction</a>, with a covariance function consisting of the sum of
+a white-noise function and a squared exponential and the distance function is
+euclidean distance.</p>
+
+<div class="language-scala highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">import</span> <span class="nn">com.github.jonnylaw.gp._</span>
+
+<span class="k">val</span> <span class="n">params</span> <span class="k">=</span> <span class="nc">GaussianProcess</span><span class="o">.</span><span class="nc">Parameters</span><span class="o">(</span>
+  <span class="nc">MeanParameters</span><span class="o">.</span><span class="n">zero</span><span class="o">,</span>
+  <span class="nc">Vector</span><span class="o">(</span><span class="nc">KernelParameters</span><span class="o">.</span><span class="n">se</span><span class="o">(</span><span class="n">h</span> <span class="k">=</span> <span class="mf">3.0</span><span class="o">,</span> <span class="n">sigma</span> <span class="k">=</span> <span class="mf">5.5</span><span class="o">),</span> <span class="nc">KernelParameters</span><span class="o">.</span><span class="n">white</span><span class="o">(</span><span class="n">sigma</span>
+  <span class="k">=</span> <span class="mf">1.0</span><span class="o">))</span>
+<span class="o">)</span>
+<span class="k">val</span> <span class="n">dist</span> <span class="k">=</span> <span class="nc">Location</span><span class="o">.</span><span class="n">euclidean</span> <span class="k">_</span>
+
+<span class="k">val</span> <span class="n">xs</span> <span class="k">=</span> <span class="nc">GaussianProcess</span><span class="o">.</span><span class="n">samplePoints</span><span class="o">(-</span><span class="mf">10.0</span><span class="o">,</span> <span class="mf">10.0</span><span class="o">,</span> <span class="mi">300</span><span class="o">).</span><span class="n">map</span><span class="o">(</span><span class="nc">One</span><span class="o">.</span><span class="n">apply</span><span class="o">)</span>
+<span class="k">val</span> <span class="n">ys</span> <span class="k">=</span> <span class="nc">GaussianProcess</span><span class="o">.</span><span class="n">draw</span><span class="o">(</span><span class="n">xs</span><span class="o">,</span> <span class="n">dist</span><span class="o">,</span> <span class="n">params</span><span class="o">)</span>
+</code></pre></div></div>
+
+<p>The hyper-parameters of the squared exponential covariance function are (h) and
+(\sigma), whereas the only hyper-parameter of the white-noise covariance
+function is (\sigma_y). In order to determine the posterior distribution of
+the hyper-parameters, prior distributions for each hyper-parameter must be
+chosen. Weakly informative prior distributions can be easily selected, but may not provide
+enough information to properly recover the parameters used in the simulation as
+they can be highly correleted. The parameters are all strictly positive, so a
+suitable prior distribution could be the gamma distribution:</p>
+
+<script type="math/tex; mode=display">% <![CDATA[
+\begin{align*}
+p(\sigma) &= \textrm{Gamma}(2, 2), \\
+p(h) &= \textrm{Gamma}(2, 2), \\
+p(\sigma_y) &= \textrm{Gamma}(2, 2).
+\end{align*} %]]></script>
+
+<p>The prior is represented as a function from the kernel parameters to a Double:</p>
+
+<div class="language-scala highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">import</span> <span class="nn">breeze.stats.distributions._</span>
+<span class="k">val</span> <span class="n">priorSigmaY</span> <span class="k">=</span> <span class="nc">Gamma</span><span class="o">(</span><span class="mi">2</span><span class="o">,</span> <span class="mi">2</span><span class="o">)</span>
+<span class="k">val</span> <span class="n">priorSigma</span> <span class="k">=</span> <span class="nc">Gamma</span><span class="o">(</span><span class="mi">2</span><span class="o">,</span> <span class="mi">2</span><span class="o">)</span>
+<span class="k">val</span> <span class="n">priorh</span> <span class="k">=</span> <span class="nc">Gamma</span><span class="o">(</span><span class="mi">2</span><span class="o">,</span> <span class="mi">2</span><span class="o">)</span>
+
+<span class="k">def</span> <span class="n">prior</span><span class="o">(</span><span class="n">ps</span><span class="k">:</span> <span class="kt">Vector</span><span class="o">[</span><span class="kt">KernelParameters</span><span class="o">])</span> <span class="k">=</span> <span class="n">ps</span><span class="o">.</span><span class="n">map</span><span class="o">(</span><span class="n">p</span> <span class="k">=&gt;</span> <span class="n">p</span> <span class="k">match</span> <span class="o">{</span>
+  <span class="k">case</span> <span class="nc">SquaredExp</span><span class="o">(</span><span class="n">h</span><span class="o">,</span> <span class="n">sigma</span><span class="o">)</span> <span class="k">=&gt;</span>
+    <span class="n">priorh</span><span class="o">.</span><span class="n">logPdf</span><span class="o">(</span><span class="n">h</span><span class="o">)</span> <span class="o">+</span>
+      <span class="n">priorSigma</span><span class="o">.</span><span class="n">logPdf</span><span class="o">(</span><span class="n">sigma</span><span class="o">)</span>
+  <span class="k">case</span> <span class="nc">White</span><span class="o">(</span><span class="n">s</span><span class="o">)</span> <span class="k">=&gt;</span>
+    <span class="n">priorSigmaY</span><span class="o">.</span><span class="n">logPdf</span><span class="o">(</span><span class="n">s</span><span class="o">)</span>
+<span class="o">}).</span><span class="n">sum</span>
+</code></pre></div></div>
+
+<p>Next the log-density of the prior distributions is combined with the
+log-likelihood of the Gaussian process:</p>
+
+<script type="math/tex; mode=display">\log p(\textbf{y}(x) | \psi) = \log p(\textbf{y}(x)|\psi) =
+-\frac{1}{2}\textbf{y}^TK_y^{-1}\textbf{y} - \frac{1}{2}\log|K_y| -
+\frac{n}{2}\log(2\pi)</script>
+
+<p>Where (K_y) is the covariance matrix at observed points, (\psi) represents the
+hyper-parameters and (\textbf{y}(x)) is a vector containing all the observed data.</p>
+
+<p>Finally a proposal distribution for the static parameters is required, a
+symmetric Normal proposal distribution with standard deviation <code class="highlighter-rouge">delta</code> which
+proposes each of the parameters on the log-scale is selected. The import of
+<code class="highlighter-rouge">cats.implicits._</code> is required to get a <code class="highlighter-rouge">Traverse</code> instance for <code class="highlighter-rouge">Vector</code>, which
+allows us to map a monadic function <code class="highlighter-rouge">A =&gt; Rand[B]</code> over the vector and return
+<code class="highlighter-rouge">Rand[Vector[B]]</code> instead of <code class="highlighter-rouge">Vector[Rand[B]]</code>.</p>
+
+<div class="language-scala highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">import</span> <span class="nn">cats.implicits._</span>
+<span class="k">def</span> <span class="n">proposal</span><span class="o">(</span><span class="n">delta</span><span class="k">:</span> <span class="kt">Double</span><span class="o">)(</span><span class="n">ps</span><span class="k">:</span> <span class="kt">Vector</span><span class="o">[</span><span class="kt">KernelParameters</span><span class="o">])</span> <span class="k">=</span> <span class="n">ps</span> <span class="n">traverse</span> <span class="o">{</span>
+  <span class="n">p</span> <span class="k">=&gt;</span> <span class="n">p</span> <span class="k">match</span> <span class="o">{</span>
+    <span class="k">case</span> <span class="nc">SquaredExp</span><span class="o">(</span><span class="n">h</span><span class="o">,</span> <span class="n">s</span><span class="o">)</span> <span class="k">=&gt;</span>
+      <span class="k">for</span> <span class="o">{</span>
+        <span class="n">z1</span> <span class="k">&lt;-</span> <span class="nc">Gaussian</span><span class="o">(</span><span class="mf">0.0</span><span class="o">,</span> <span class="n">delta</span><span class="o">)</span>
+        <span class="n">newh</span> <span class="k">=</span> <span class="n">h</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="o">(</span><span class="n">z1</span><span class="o">)</span>
+        <span class="n">z2</span> <span class="k">&lt;-</span> <span class="nc">Gaussian</span><span class="o">(</span><span class="mf">0.0</span><span class="o">,</span> <span class="n">delta</span><span class="o">)</span>
+        <span class="n">newS</span> <span class="k">=</span> <span class="n">s</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="o">(</span><span class="n">z2</span><span class="o">)</span>
+      <span class="o">}</span> <span class="k">yield</span> <span class="nc">KernelParameters</span><span class="o">.</span><span class="n">se</span><span class="o">(</span><span class="n">newh</span><span class="o">,</span> <span class="n">newS</span><span class="o">)</span>
+    <span class="k">case</span> <span class="nc">White</span><span class="o">(</span><span class="n">s</span><span class="o">)</span> <span class="k">=&gt;</span>
+      <span class="k">for</span> <span class="o">{</span>
+        <span class="n">z</span> <span class="k">&lt;-</span> <span class="nc">Gaussian</span><span class="o">(</span><span class="mf">0.0</span><span class="o">,</span> <span class="n">delta</span><span class="o">)</span>
+        <span class="n">news</span> <span class="k">=</span> <span class="n">s</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="o">(</span><span class="n">z</span><span class="o">)</span>
+      <span class="o">}</span> <span class="k">yield</span> <span class="nc">KernelParameters</span><span class="o">.</span><span class="n">white</span><span class="o">(</span><span class="n">news</span><span class="o">)</span>
+  <span class="o">}</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>Now the <code class="highlighter-rouge">sample</code> function can be used to determine the covariance function
+hyper-parameters given the observed data,  observing every 10th simulated point:</p>
+
+<div class="language-scala highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">val</span> <span class="n">observed</span> <span class="k">=</span> <span class="nc">GaussianProcess</span><span class="o">.</span><span class="n">vecToData</span><span class="o">(</span><span class="n">ys</span><span class="o">,</span> <span class="n">xs</span><span class="o">).</span>
+    <span class="n">zipWithIndex</span><span class="o">.</span>
+    <span class="n">filter</span> <span class="o">{</span> <span class="k">case</span> <span class="o">(</span><span class="k">_</span><span class="o">,</span> <span class="n">i</span><span class="o">)</span> <span class="k">=&gt;</span> <span class="o">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="o">)</span> <span class="o">%</span> <span class="mi">10</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">}.</span>
+    <span class="n">map</span><span class="o">(</span><span class="k">_</span><span class="o">.</span><span class="n">_1</span><span class="o">)</span>
+
+<span class="k">val</span> <span class="n">step</span> <span class="k">=</span> <span class="nc">KernelParameters</span><span class="o">.</span><span class="n">sample</span><span class="o">(</span><span class="n">observed</span><span class="o">,</span> <span class="n">dist</span><span class="o">,</span> <span class="n">prior</span><span class="o">,</span> <span class="n">proposal</span><span class="o">(</span><span class="mf">0.05</span><span class="o">))</span>
+<span class="k">val</span> <span class="n">init</span> <span class="k">=</span> <span class="n">params</span>
+
+<span class="k">val</span> <span class="n">iters</span> <span class="k">=</span> <span class="nc">MarkovChain</span><span class="o">(</span><span class="n">init</span><span class="o">)(</span><span class="n">step</span><span class="o">).</span>
+  <span class="n">steps</span><span class="o">.</span>
+  <span class="n">drop</span><span class="o">(</span><span class="mi">90000</span><span class="o">).</span>
+  <span class="n">take</span><span class="o">(</span><span class="mi">10000</span><span class="o">).</span>
+  <span class="n">toVector</span>
+</code></pre></div></div>
+
+<p>This samples 20000 iterations of a Markov chain, discarding the first 10000 as
+burn-in. This diagnostics of the this chain can be plotted:</p>
+
+<div class="language-scala highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">import</span> <span class="nn">com.cibo.evilplot.plot.aesthetics.DefaultTheme._</span>
+
+<span class="nc">Diagnostics</span><span class="o">.</span><span class="n">diagnostics</span><span class="o">(</span><span class="n">iters</span><span class="o">.</span><span class="n">map</span> <span class="o">{</span> <span class="n">ps</span> <span class="k">=&gt;</span> <span class="n">ps</span><span class="o">.</span><span class="n">toMap</span> <span class="o">}).</span>
+  <span class="n">render</span><span class="o">().</span>
+  <span class="n">write</span><span class="o">(</span><span class="k">new</span> <span class="n">java</span><span class="o">.</span><span class="n">io</span><span class="o">.</span><span class="nc">File</span><span class="o">(</span><span class="s">"docs/src/main/resources/figures/parameters_weakly_informative_gp.png"</span><span class="o">))</span>
+</code></pre></div></div>
+
+<p><img src="../img/parameters_weakly_informative_gp.png" alt="Parameter diagnostics" width="600" /></p>
+
+<p>More informative prior distributions are required to recover the parameters from
+this data, or more data. In addition the variance of the proposal distribution
+appears to be too small, since the traceplot reveals poor mixing.</p>
+
+<h2 id="posterior-predictive-distribution">Posterior predictive distribution</h2>
+
+<p>The parameter posterior distribution can be used to make draws from the
+posterior predictive distribution of the latent function, (f(x)).</p>
+
+<div class="language-scala highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">def</span> <span class="n">discreteUniform</span><span class="o">(</span><span class="n">min</span><span class="k">:</span> <span class="kt">Int</span><span class="o">,</span> <span class="n">max</span><span class="k">:</span> <span class="kt">Int</span><span class="o">)</span> <span class="k">=</span> <span class="k">new</span> <span class="nc">Rand</span><span class="o">[</span><span class="kt">Int</span><span class="o">]</span> <span class="o">{</span>
+  <span class="k">def</span> <span class="n">draw</span> <span class="k">=</span> <span class="n">scala</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="nc">Random</span><span class="o">.</span><span class="n">nextInt</span><span class="o">(</span><span class="n">max</span> <span class="o">-</span> <span class="n">min</span><span class="o">)</span> <span class="o">+</span> <span class="n">min</span>
+<span class="o">}</span>
+
+<span class="k">val</span> <span class="n">replicates</span> <span class="k">=</span> <span class="mi">50</span>
+
+<span class="c1">// uniformly sample indices
+</span><span class="k">val</span> <span class="n">indices</span> <span class="k">=</span> <span class="n">discreteUniform</span><span class="o">(</span><span class="mi">0</span><span class="o">,</span> <span class="n">iters</span><span class="o">.</span><span class="n">size</span><span class="o">).</span>
+  <span class="n">sample</span><span class="o">(</span><span class="n">replicates</span><span class="o">).</span><span class="n">toVector</span>
+
+<span class="c1">// create a regular grid of points to draw from the GP posterior
+</span><span class="k">implicit</span> <span class="k">val</span> <span class="n">integralD</span> <span class="k">=</span> <span class="n">scala</span><span class="o">.</span><span class="n">math</span><span class="o">.</span><span class="nc">Numeric</span><span class="o">.</span><span class="nc">DoubleAsIfIntegral</span>
+<span class="k">val</span> <span class="n">testPoints</span> <span class="k">=</span> <span class="nc">Vector</span><span class="o">.</span><span class="n">range</span><span class="o">(-</span><span class="mf">10.0</span><span class="o">,</span> <span class="mf">10.0</span><span class="o">,</span> <span class="mf">0.01</span><span class="o">).</span><span class="n">map</span><span class="o">(</span><span class="nc">One</span><span class="o">(</span><span class="k">_</span><span class="o">))</span>
+
+<span class="k">def</span> <span class="n">predict</span><span class="o">(</span><span class="n">p</span><span class="k">:</span> <span class="kt">GaussianProcess.Parameters</span><span class="o">)</span><span class="k">:</span> <span class="kt">Vector</span><span class="o">[(</span><span class="kt">Location</span><span class="o">[</span><span class="kt">Double</span><span class="o">]</span>, <span class="kt">Gaussian</span><span class="o">)]</span>  <span class="k">=</span> <span class="o">{</span>
+  <span class="nc">Predict</span><span class="o">.</span><span class="n">fit</span><span class="o">(</span><span class="n">testPoints</span><span class="o">,</span> <span class="n">observed</span><span class="o">,</span> <span class="n">dist</span><span class="o">,</span> <span class="n">p</span><span class="o">)</span>
+<span class="o">}</span>
+
+<span class="k">val</span> <span class="n">parameters</span> <span class="k">=</span> <span class="n">indices</span><span class="o">.</span><span class="n">toVector</span><span class="o">.</span><span class="n">map</span><span class="o">(</span><span class="n">i</span> <span class="k">=&gt;</span> <span class="n">iters</span><span class="o">(</span><span class="n">i</span><span class="o">))</span>
+<span class="k">val</span> <span class="n">res</span> <span class="k">=</span> <span class="n">parameters</span><span class="o">.</span><span class="n">map</span><span class="o">(</span><span class="n">predict</span><span class="o">)</span>
+</code></pre></div></div>
+
+<p>The posterior mean of the latent function at each of the <code class="highlighter-rouge">p = 50</code> sampled parameters can be plotted:</p>
+
+<div class="language-scala highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">com</span><span class="o">.</span><span class="n">cibo</span><span class="o">.</span><span class="n">evilplot</span><span class="o">.</span><span class="n">plot</span><span class="o">.</span><span class="nc">Overlay</span><span class="o">(</span><span class="nc">Plot</span><span class="o">.</span><span class="n">ppPlot</span><span class="o">(</span><span class="n">res</span><span class="o">),</span> <span class="nc">Plot</span><span class="o">.</span><span class="n">scatterPlot</span><span class="o">(</span><span class="n">observed</span><span class="o">)).</span>
+  <span class="n">render</span><span class="o">().</span>
+  <span class="n">write</span><span class="o">(</span><span class="k">new</span> <span class="n">java</span><span class="o">.</span><span class="n">io</span><span class="o">.</span><span class="nc">File</span><span class="o">(</span><span class="s">"docs/src/main/resources/figures/posterior_predictive_gp.png"</span><span class="o">))</span>
+</code></pre></div></div>
+
+<p><img src="../img/posterior_predictive_gp.png" alt="Posterior predictive distribution" width="600" /></p>
+</section></div></div></div></div><script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/js/bootstrap.min.js"></script><script src="/gaussian-processes/highlight/highlight.pack.js"></script><script>hljs.configure({languages:['scala','java','bash']});
+hljs.initHighlighting();
+              </script><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML"></script><script>((window.gitter = {}).chat = {}).options = {
+room: 'jonnylaw/gaussian-processes'};</script><script src="https://sidecar.gitter.im/dist/sidecar.v1.js"></script><script src="/gaussian-processes/js/main.js"></script></body></html>
